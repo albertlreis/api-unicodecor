@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\PremioController;
 use App\Http\Controllers\BannerController;
 use App\Http\Controllers\RankingController;
 use Illuminate\Support\Facades\Route;
@@ -15,6 +16,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/ranking/top100', [RankingController::class, 'top100']);
     Route::get('/campanhas/banners', [BannerController::class, 'index']);
+    Route::get('/premios', [PremioController::class, 'ativos']);
 
 });
 
