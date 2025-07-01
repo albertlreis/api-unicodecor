@@ -60,6 +60,8 @@ class PremioFaixa extends Model
 
     public function getAcompanhanteLabelAttribute(): string
     {
-        return $this->acompanhante ? 'Sim' : 'Não';
+        return $this->acompanhante
+            ? 'Inclui acompanhante'
+            : 'Sem acompanhante';
     }
 }
