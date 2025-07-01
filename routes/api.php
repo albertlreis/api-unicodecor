@@ -15,6 +15,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/pontuacoes', [PontuacaoController::class, 'index']);
+    Route::get('/pontuacoes/info-home', [PontuacaoController::class, 'infoHome']);
 
     Route::get('/ranking/top100', [RankingController::class, 'top100']);
     Route::get('/campanhas/banners', [BannerController::class, 'index']);
