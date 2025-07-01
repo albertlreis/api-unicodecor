@@ -2,25 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\PontoResource;
+use App\Services\PontuacaoService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
 class PontuacaoController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $id = $request->user()->id;
+        $user = auth()->user();
 
-        $pontos = DB::table('profissional_pontos')
-            ->where('id_profissional', $id)
-            ->first();
+        $result = (new PontuacaoService())->buscarPontuacoes($request, $user);
 
-        return response()->json([
-            'total' => $pontos->total ?? 0,
-            'mensal' => $pontos->mensal ?? 0,
-            'semanal' => $pontos->semanal ?? 0,
-            'diario' => $pontos->diario ?? 0,
-        ]);
+        return PontoResource::collection($result)->response();
     }
 }
