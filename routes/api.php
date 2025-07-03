@@ -16,12 +16,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/pontuacoes', [PontuacaoController::class, 'index']);
     Route::get('/pontuacoes/info-home', [PontuacaoController::class, 'infoHome']);
+    Route::post('/pontuacoes', [PontuacaoController::class, 'store']);
 
     Route::get('/ranking/top100', [RankingController::class, 'top100']);
     Route::get('/campanhas/banners', [BannerController::class, 'index']);
     Route::get('/premios', [PremioController::class, 'ativos']);
     Route::get('/lojas', [LojaController::class, 'index']);
-    Route::get('/clientes', [UsuarioController::class, 'clientes']);
+    Route::get('/usuarios', [UsuarioController::class, 'usuarios']);
 
 });
 
