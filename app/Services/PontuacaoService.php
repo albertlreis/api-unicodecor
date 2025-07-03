@@ -45,6 +45,10 @@ class PontuacaoService
             }
         }
 
+        if (in_array($user->id_perfil, [1, 3]) && $request->filled('id_profissional')) {
+            $query->where('id_profissional', $request->id_profissional);
+        }
+
         // Filtros
         if ($request->filled('valor')) {
             $valor = str_replace(['.', ','], ['', '.'], $request->valor);
