@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\PontuacaoRequest;
 use App\Http\Resources\PontoResource;
 use App\Http\Resources\CampanhaPontuacaoResource;
 use App\Services\PontuacaoService;
@@ -10,6 +11,13 @@ use Illuminate\Http\Request;
 
 class PontuacaoController extends Controller
 {
+    protected PontuacaoService $service;
+
+    public function __construct(PontuacaoService $service)
+    {
+        $this->service = $service;
+    }
+
     public function index(Request $request): JsonResponse
     {
         $user = auth()->user();
@@ -31,5 +39,18 @@ class PontuacaoController extends Controller
         $dados = (new PontuacaoService())->obterCampanhasComPontuacao($usuarioId);
 
         return new CampanhaPontuacaoResource($dados);
+    }
+
+    public function store(PontuacaoRequest $request): JsonResponse
+    {
+        $usuario = $request->user();
+        $data = $request->validated();
+
+        $ponto = $this->service->salvarPontuacao($data, $usuario);
+
+        return response()->json([
+            'success' => true,
+            'data' => new PontoResource($ponto),
+        ]);
     }
 }
