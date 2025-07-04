@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\RankingRequest;
+use App\Http\Resources\RankingDetalhadoResource;
 use App\Http\Resources\RankingResource;
 use App\Http\Resources\Top100Resource;
 use App\Services\RankingService;
@@ -32,6 +33,19 @@ class RankingController extends Controller
         return response()->json([
             'premio' => $resultado['premio'],
             'dados' => RankingResource::collection($resultado['dados']),
+        ]);
+    }
+
+    public function detalhado(RankingRequest $request): JsonResponse
+    {
+        $resultado = (new RankingService())->obterRankingDetalhadoPorPremio($request);
+
+        return response()->json([
+            'sucesso' => true,
+            'mensagem' => 'Ranking detalhado carregado com sucesso.',
+            'dados' => RankingDetalhadoResource::collection($resultado['atingiram']),
+            'nao_atingiram' => RankingDetalhadoResource::collection($resultado['nao_atingiram']),
+            'premio' => $resultado['premio'],
         ]);
     }
 }

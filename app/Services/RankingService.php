@@ -76,4 +76,75 @@ class RankingService
             'dados' => $ranking,
         ];
     }
+
+    public function obterRankingDetalhadoPorPremio(Request $request): array
+    {
+        $premioId = $request->input('id_premio');
+
+        $premio = Premio::findOrFail($premioId);
+
+        $result = DB::table('pontos as p')
+            ->select(
+                'u.id as id_profissional',
+                'u.nome as profissional',
+                'l.nome as loja',
+                DB::raw('SUM(p.valor) as total')
+            )
+            ->join('usuario as u', 'u.id', '=', 'p.id_profissional')
+            ->join('lojas as l', 'l.id', '=', 'p.id_loja')
+            ->whereBetween('p.dt_referencia', [$premio->dt_inicio, $premio->dt_fim])
+            ->where('p.status', 1)
+            ->groupBy('u.id', 'u.nome', 'l.nome')
+            ->orderByDesc('total')
+            ->get();
+
+        $consolidado = [];
+
+        foreach ($result as $item) {
+            $id = $item->id_profissional;
+
+            if (!isset($consolidado[$id])) {
+                $consolidado[$id] = [
+                    'id_profissional' => $id,
+                    'nome' => $item->profissional,
+                    'total' => 0,
+                    'pontos' => []
+                ];
+            }
+
+            $consolidado[$id]['pontos'][] = [
+                'loja' => $item->loja,
+                'total' => (float)$item->total
+            ];
+
+            $consolidado[$id]['total'] += (float)$item->total;
+        }
+
+        // Separar atingiram e não atingiram
+        $atingiram = [];
+        $naoAtingiram = [];
+
+        foreach ($consolidado as $prof) {
+            if ($prof['total'] >= $premio->pontos) {
+                $atingiram[] = $prof;
+            } else {
+                $naoAtingiram[] = $prof;
+            }
+        }
+
+        usort($atingiram, fn($a, $b) => $b['total'] <=> $a['total']);
+        usort($naoAtingiram, fn($a, $b) => $b['total'] <=> $a['total']);
+
+        return [
+            'atingiram' => $atingiram,
+            'nao_atingiram' => $naoAtingiram,
+            'premio' => [
+                'id' => $premio->id,
+                'titulo' => $premio->titulo,
+                'dt_inicio' => $premio->dt_inicio,
+                'dt_fim' => $premio->dt_fim,
+                'pontos' => $premio->pontos,
+            ],
+        ];
+    }
 }
