@@ -23,6 +23,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/premios', [PremioController::class, 'ativos']);
     Route::get('/lojas', [LojaController::class, 'index']);
     Route::get('/usuarios', [UsuarioController::class, 'usuarios']);
+    Route::get('/ranking/geral', [RankingController::class, 'index']);
 
 });
 

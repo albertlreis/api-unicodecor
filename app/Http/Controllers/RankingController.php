@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\RankingRequest;
+use App\Http\Resources\RankingResource;
 use App\Http\Resources\Top100Resource;
 use App\Services\RankingService;
 use Illuminate\Http\JsonResponse;
@@ -15,5 +17,21 @@ class RankingController extends Controller
         $data = $service->getTop100Data($user->id);
 
         return response()->json(new Top100Resource($data));
+    }
+
+    /**
+     * Exibe o ranking geral de pontuações.
+     *
+     * @param \App\Http\Requests\RankingRequest $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function index(RankingRequest $request): JsonResponse
+    {
+        $resultado = (new RankingService())->listar($request);
+
+        return response()->json([
+            'premio' => $resultado['premio'],
+            'dados' => RankingResource::collection($resultado['dados']),
+        ]);
     }
 }
