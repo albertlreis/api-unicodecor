@@ -42,7 +42,11 @@ class RankingService
         $idPremio = $request->input('id_premio');
         $premio = Premio::findOrFail($idPremio);
 
-        $dados = DB::select('CALL sp_ranking_geral_profissionais(?)', [$idPremio]);
+        $isTop100 = $this->isTop100($premio);
+
+        $dados = $isTop100
+            ? DB::select('CALL sp_ranking_top100_profissionais(?)', [$idPremio])
+            : DB::select('CALL sp_ranking_geral_profissionais(?)', [$idPremio]);
 
         return [
             'premio' => [
@@ -50,6 +54,7 @@ class RankingService
                 'titulo' => $premio->titulo,
                 'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
                 'dt_fim' => $premio->dt_fim->format('Y-m-d'),
+                'pontos' => $premio->pontos,
             ],
             'dados' => $dados,
         ];
@@ -65,6 +70,25 @@ class RankingService
     {
         $premioId = $request->input('id_premio');
         $premio = Premio::findOrFail($premioId);
+
+        $isTop100 = $this->isTop100($premio);
+
+        if ($isTop100) {
+            // Busca única com todos os profissionais
+            $linhas = DB::select('CALL sp_ranking_detalhado_top100(?)', [$premioId]);
+            $todos = $this->consolidarPorProfissional($linhas);
+
+            return [
+                'premio' => [
+                    'id' => $premio->id,
+                    'titulo' => $premio->titulo,
+                    'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
+                    'dt_fim' => $premio->dt_fim->format('Y-m-d'),
+                    'pontos' => $premio->pontos,
+                ],
+                'todos' => $todos,
+            ];
+        }
 
         // 1. Profissionais que atingiram pelo menos uma faixa
         $linhasAtingiram = DB::select('CALL sp_ranking_detalhado_por_loja(?)', [$premioId]);
@@ -112,17 +136,22 @@ class RankingService
             $valor = floatval($linha->total);
             $consolidado[$id]['pontos'][] = [
                 'loja' => $linha->loja,
-                'total' => $valor, // ainda sem formatar, será formatado no resource
+                'total' => $valor,
             ];
 
             $consolidado[$id]['total'] += $valor;
         }
 
-        // Ordena por pontuação decrescente
         $resultado = array_values($consolidado);
         usort($resultado, fn($a, $b) => $b['total'] <=> $a['total']);
 
         return $resultado;
     }
 
+    private function isTop100(Premio $premio): bool
+    {
+        return $premio->status === 1 &&
+            is_null(DB::table('premio_faixas')->where('id_premio', $premio->id)->first()) &&
+            $premio->pontos > 0;
+    }
 }

@@ -40,12 +40,19 @@ class RankingController extends Controller
     {
         $resultado = (new RankingService())->obterRankingDetalhadoPorPremio($request);
 
-        return response()->json([
+        $response = [
             'sucesso' => true,
             'mensagem' => 'Ranking detalhado carregado com sucesso.',
-            'atingiram' => RankingDetalhadoResource::collection($resultado['atingiram']),
-            'nao_atingiram' => RankingDetalhadoResource::collection($resultado['nao_atingiram']),
             'premio' => $resultado['premio'],
-        ]);
+        ];
+
+        if (isset($resultado['todos'])) {
+            $response['todos'] = RankingDetalhadoResource::collection($resultado['todos']);
+        } else {
+            $response['atingiram'] = RankingDetalhadoResource::collection($resultado['atingiram']);
+            $response['nao_atingiram'] = RankingDetalhadoResource::collection($resultado['nao_atingiram']);
+        }
+
+        return response()->json($response);
     }
 }
