@@ -40,31 +40,9 @@ class RankingService
     public function listar(Request $request): array
     {
         $idPremio = $request->input('id_premio');
-
         $premio = Premio::findOrFail($idPremio);
 
-        $ranking = Ponto::query()
-            ->selectRaw('id_profissional, SUM(valor) as pontuacao')
-            ->where('status', 1)
-            ->whereBetween('dt_referencia', [
-                $premio->dt_inicio->format('Y-m-d'),
-                $premio->dt_fim->format('Y-m-d'),
-            ])
-            ->groupBy('id_profissional')
-            ->orderByDesc('pontuacao')
-            ->get()
-            ->map(function ($item) {
-                $usuario = Usuario::find($item->id_profissional);
-
-                return (object) [
-                    'id_profissional' => $item->id_profissional,
-                    'pontuacao' => $item->pontuacao,
-                    'profissional' => $usuario ? (object) [
-                        'id' => $usuario->id,
-                        'nome' => $usuario->nome,
-                    ] : null,
-                ];
-            });
+        $dados = DB::select('CALL sp_ranking_geral_profissionais(?)', [$idPremio]);
 
         return [
             'premio' => [
@@ -73,78 +51,78 @@ class RankingService
                 'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
                 'dt_fim' => $premio->dt_fim->format('Y-m-d'),
             ],
-            'dados' => $ranking,
+            'dados' => $dados,
         ];
     }
 
+    /**
+     * Retorna o ranking detalhado (profissionais que atingiram e que não atingiram).
+     *
+     * @param Request $request
+     * @return array
+     */
     public function obterRankingDetalhadoPorPremio(Request $request): array
     {
         $premioId = $request->input('id_premio');
-
         $premio = Premio::findOrFail($premioId);
 
-        $result = DB::table('pontos as p')
-            ->select(
-                'u.id as id_profissional',
-                'u.nome as profissional',
-                'l.nome as loja',
-                DB::raw('SUM(p.valor) as total')
-            )
-            ->join('usuario as u', 'u.id', '=', 'p.id_profissional')
-            ->join('lojas as l', 'l.id', '=', 'p.id_loja')
-            ->whereBetween('p.dt_referencia', [$premio->dt_inicio, $premio->dt_fim])
-            ->where('p.status', 1)
-            ->groupBy('u.id', 'u.nome', 'l.nome')
-            ->orderByDesc('total')
-            ->get();
+        // 1. Profissionais que atingiram pelo menos uma faixa
+        $linhasAtingiram = DB::select('CALL sp_ranking_detalhado_por_loja(?)', [$premioId]);
+        $atingiram = $this->consolidarPorProfissional($linhasAtingiram);
 
+        // 2. Profissionais que não atingiram nenhuma faixa
+        $linhasNaoAtingiram = DB::select('CALL sp_ranking_detalhado_nao_atingiram(?)', [$premioId]);
+        $naoAtingiram = $this->consolidarPorProfissional($linhasNaoAtingiram);
+
+        return [
+            'premio' => [
+                'id' => $premio->id,
+                'titulo' => $premio->titulo,
+                'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
+                'dt_fim' => $premio->dt_fim->format('Y-m-d'),
+                'pontos' => $premio->pontos,
+            ],
+            'atingiram' => $atingiram,
+            'nao_atingiram' => $naoAtingiram,
+        ];
+    }
+
+    /**
+     * Converte linhas de ranking em estrutura agrupada por profissional.
+     *
+     * @param array $linhas
+     * @return array
+     */
+    private function consolidarPorProfissional(array $linhas): array
+    {
         $consolidado = [];
 
-        foreach ($result as $item) {
-            $id = $item->id_profissional;
+        foreach ($linhas as $linha) {
+            $id = $linha->id_profissional;
 
             if (!isset($consolidado[$id])) {
                 $consolidado[$id] = [
                     'id_profissional' => $id,
-                    'nome' => $item->profissional,
-                    'total' => 0,
-                    'pontos' => []
+                    'nome' => $linha->nome_profissional,
+                    'total' => 0.0,
+                    'pontos' => [],
                 ];
             }
 
+            $valor = floatval($linha->total);
             $consolidado[$id]['pontos'][] = [
-                'loja' => $item->loja,
-                'total' => (float)$item->total
+                'loja' => $linha->loja,
+                'total' => $valor, // ainda sem formatar, será formatado no resource
             ];
 
-            $consolidado[$id]['total'] += (float)$item->total;
+            $consolidado[$id]['total'] += $valor;
         }
 
-        // Separar atingiram e não atingiram
-        $atingiram = [];
-        $naoAtingiram = [];
+        // Ordena por pontuação decrescente
+        $resultado = array_values($consolidado);
+        usort($resultado, fn($a, $b) => $b['total'] <=> $a['total']);
 
-        foreach ($consolidado as $prof) {
-            if ($prof['total'] >= $premio->pontos) {
-                $atingiram[] = $prof;
-            } else {
-                $naoAtingiram[] = $prof;
-            }
-        }
-
-        usort($atingiram, fn($a, $b) => $b['total'] <=> $a['total']);
-        usort($naoAtingiram, fn($a, $b) => $b['total'] <=> $a['total']);
-
-        return [
-            'atingiram' => $atingiram,
-            'nao_atingiram' => $naoAtingiram,
-            'premio' => [
-                'id' => $premio->id,
-                'titulo' => $premio->titulo,
-                'dt_inicio' => $premio->dt_inicio,
-                'dt_fim' => $premio->dt_fim,
-                'pontos' => $premio->pontos,
-            ],
-        ];
+        return $resultado;
     }
+
 }

@@ -18,10 +18,7 @@ class RankingResource extends JsonResource
         return [
             'id_profissional' => $this->id_profissional,
             'pontuacao' => $this->pontuacao,
-            'profissional' => isset($this->profissional) ? [
-                'id' => $this->profissional->id ?? null,
-                'nome' => $this->profissional->nome ?? null,
-            ] : null,
+            'nome_profissional' => $this->nome_profissional
         ];
     }
 }

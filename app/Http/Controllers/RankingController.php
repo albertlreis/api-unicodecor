@@ -43,7 +43,7 @@ class RankingController extends Controller
         return response()->json([
             'sucesso' => true,
             'mensagem' => 'Ranking detalhado carregado com sucesso.',
-            'dados' => RankingDetalhadoResource::collection($resultado['atingiram']),
+            'atingiram' => RankingDetalhadoResource::collection($resultado['atingiram']),
             'nao_atingiram' => RankingDetalhadoResource::collection($resultado['nao_atingiram']),
             'premio' => $resultado['premio'],
         ]);
