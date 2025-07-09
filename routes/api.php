@@ -4,6 +4,7 @@ use App\Http\Controllers\LojaController;
 use App\Http\Controllers\PremioController;
 use App\Http\Controllers\BannerController;
 use App\Http\Controllers\RankingController;
+use App\Http\Controllers\RateioController;
 use App\Http\Controllers\UsuarioController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
@@ -26,6 +27,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/ranking/top100', [RankingController::class, 'top100']);
     Route::get('/ranking/geral', [RankingController::class, 'index']);
     Route::get('/ranking/detalhado', [RankingController::class, 'detalhado']);
+    Route::get('/rateio', [RateioController::class, 'index']);
 
 });
 
