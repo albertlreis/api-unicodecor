@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\LojaController;
+use App\Http\Controllers\PlantasBaixasController;
 use App\Http\Controllers\PremioController;
 use App\Http\Controllers\BannerController;
 use App\Http\Controllers\RankingController;
@@ -28,6 +29,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/ranking/geral', [RankingController::class, 'index']);
     Route::get('/ranking/detalhado', [RankingController::class, 'detalhado']);
     Route::get('/rateio', [RateioController::class, 'index']);
+
+    Route::get('/plantas-baixas', [PlantasBaixasController::class, 'index']);
 
 });
 
