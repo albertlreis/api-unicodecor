@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\GaleriaController;
 use App\Http\Controllers\LojaController;
 use App\Http\Controllers\PlantasBaixasController;
 use App\Http\Controllers\PremioController;
@@ -31,6 +32,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/rateio', [RateioController::class, 'index']);
 
     Route::get('/plantas-baixas', [PlantasBaixasController::class, 'index']);
+
+    Route::prefix('galerias')->group(function () {
+        Route::get('/', [GaleriaController::class, 'index']);
+        Route::get('{id}', [GaleriaController::class, 'show']);
+    });
 
 });
 
