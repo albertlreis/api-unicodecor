@@ -28,6 +28,7 @@ class CampanhaPontuacaoResource extends JsonResource
             'pontuacao_total' => number_format($pontuacaoTotal, 0, ',', '.'),
             'dias_restantes' => $this->resource['dias_restantes'],
             'campanha' => [
+                'id' => $campanha->id,
                 'titulo' => $campanha->titulo,
                 'banner' => $campanha->banner,
                 'dt_inicio' => Carbon::parse($campanha->dt_inicio)->format('d/m/Y'),
@@ -35,6 +36,7 @@ class CampanhaPontuacaoResource extends JsonResource
                 'periodo' => Carbon::parse($campanha->dt_inicio)->format('d/m/Y') . ' até ' . Carbon::parse($campanha->dt_fim)->format('d/m/Y'),
             ],
             'faixa_atual' => $faixaAtual ? [
+                'id' => $faixaAtual->id,
                 'descricao' => $faixaAtual->descricao,
                 'pontos_min' => $faixaAtual->pontos_min,
                 'pontos_max' => $faixaAtual->pontos_max,
@@ -44,6 +46,7 @@ class CampanhaPontuacaoResource extends JsonResource
                 'vl_viagem' => $faixaAtual->vl_viagem,
             ] : null,
             'proxima_faixa' => $proximaFaixa ? [
+                'id' => $proximaFaixa->id,
                 'descricao' => $proximaFaixa->descricao,
                 'pontos_min' => $proximaFaixa->pontos_min,
                 'pontos_max' => $proximaFaixa->pontos_max,

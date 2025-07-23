@@ -16,11 +16,12 @@ class UsuarioController extends Controller
      */
     public function usuarios(Request $request): JsonResponse
     {
-        // Permite buscar o perfil por query string, body JSON ou formulário
         $perfilId = $request->input('id_perfil', 6);
+        $user = auth()->user();
 
         $clientes = Usuario::where('id_perfil', $perfilId)
             ->where('status', 1)
+            ->visiveisParaUsuario($user)
             ->orderBy('nome')
             ->get(['id', 'nome', 'cpf']);
 
