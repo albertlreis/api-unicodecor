@@ -2,28 +2,32 @@
 
 namespace App\Http\Controllers;
 
+use App\Application\Premios\ListarPremiosAtivos;
 use App\Http\Resources\PremioResource;
-use App\Models\Premio;
 use Illuminate\Http\JsonResponse;
 
+/**
+ * @phpstan-type PremioCollection array<int, array<string, mixed>>
+ */
 class PremioController extends Controller
 {
+    public function __construct(
+        private readonly ListarPremiosAtivos $listarPremiosAtivos
+    ) {}
+
     /**
-     * Lista todos os prêmios ativos.
+     * Lista prêmios/campanhas ativas, com faixas.
      *
      * @return JsonResponse
      */
     public function ativos(): JsonResponse
     {
-        $premios = Premio::with('faixas')
-            ->where('status', 1)
-            ->orderByDesc('dt_inicio')
-            ->get();
+        $premios = $this->listarPremiosAtivos->handle();
 
         return response()->json([
-            'sucesso' => true,
+            'sucesso'  => true,
             'mensagem' => 'Lista de prêmios ativos',
-            'dados' => PremioResource::collection($premios),
+            'dados'    => PremioResource::collection($premios),
         ]);
     }
 }

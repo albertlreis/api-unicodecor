@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
@@ -55,7 +56,7 @@ class Premio extends Model
 
     public function faixas(): HasMany
     {
-        return $this->hasMany(PremioFaixa::class, 'id_premio');
+        return $this->hasMany(PremioFaixa::class, 'id_premio')->orderBy('pontos_min');
     }
 
     // -- Accessors
@@ -93,5 +94,22 @@ class Premio extends Model
     public function getPontosFormatadoAttribute(): ?string
     {
         return $this->pontos ? number_format($this->pontos, 2, ',', '.') : null;
+    }
+
+
+    /**
+     * Escopo para campanhas ativas na data informada (padrão: hoje).
+     *
+     * @param  Builder  $query
+     * @param  string|null  $data ISO Y-m-d
+     * @return Builder
+     */
+    public function scopeAtivosNoDia(Builder $query, ?string $data = null): Builder
+    {
+        $hoje = $data ?: Carbon::today()->toDateString();
+
+        return $query->where('status', 1)
+            ->whereDate('dt_inicio', '<=', $hoje)
+            ->where(fn ($q) => $q->whereNull('dt_fim')->orWhereDate('dt_fim', '>=', $hoje));
     }
 }
