@@ -87,66 +87,93 @@ class PontuacaoService
     }
 
     /**
-     * Retorna as campanhas nas quais o profissional se enquadra em alguma faixa.
-     * Agora a lógica parte das faixas, e somente campanhas com faixa atual válida são retornadas.
+     * Retorna a campanha/faixas para o profissional considerando a data base.
      *
      * @param int $usuarioId
-     * @return array<int, array{
-     *     campanha: \App\Models\Premio,
-     *     faixa_atual: \App\Models\PremioFaixa|null,
-     *     proxima_faixa: \App\Models\PremioFaixa|null,
-     *     dias_restantes: int,
-     *     pontuacao_total: float
-     * }>
+     * @param string|null $dataBase ISO Y-m-d (default: hoje)
+     * @return array{
+     *   campanha: \App\Models\Premio|null,
+     *   faixa_atual: \App\Models\PremioFaixa|null,
+     *   proxima_faixa: \App\Models\PremioFaixa|null,
+     *   dias_restantes: int,
+     *   pontuacao_total: float
+     * }
      */
-    public function obterCampanhasComPontuacao(int $usuarioId): array
+    public function obterCampanhasComPontuacao(int $usuarioId, ?string $dataBase = null): array
     {
-        $hoje = Carbon::today();
-        $anoAtual = Carbon::now()->year;
-        $inicioAno = Carbon::create($anoAtual, 1, 1);
-        $fimAno = Carbon::create($anoAtual, 12, 31);
+        $hoje = Carbon::parse($dataBase ?: Carbon::today()->toDateString());
+        $ano  = (int) $hoje->format('Y');
+        $inicioAno = Carbon::create($ano, 1, 1);
+        $fimAno    = Carbon::create($ano, 12, 31);
 
-        // Soma da pontuação no ano vigente
-        $pontuacaoTotal = Ponto::where('id_profissional', $usuarioId)
+        // 1) Pontuação do profissional no ANO da data-base (compatível com regra anual)
+        $pontuacaoTotal = (float) Ponto::where('id_profissional', $usuarioId)
             ->whereBetween('dt_referencia', [$inicioAno->toDateString(), $fimAno->toDateString()])
             ->sum('valor');
 
-        // Busca todas as faixas com seus respectivos prêmios ativos no ano vigente
-        $faixas = PremioFaixa::with('premio')
-            ->whereHas('premio', function ($query) use ($hoje, $anoAtual) {
-                $query->where('status', 1)
-                    ->whereYear('dt_inicio', '<=', $anoAtual)
-                    ->whereYear('dt_fim', '>=', $anoAtual)
-                    ->where('dt_inicio', '<=', $hoje)
-                    ->where('dt_fim', '>=', $hoje);
-            })
-            ->orderBy('pontos_min')
+        // 2) Campanhas ativas na data-base, com faixas
+        $campanhasAtivas = Premio::query()
+            ->with(['faixas' => fn($q) => $q->orderBy('pontos_min')])
+            ->where('status', 1)
+            ->whereDate('dt_inicio', '<=', $hoje->toDateString())
+            ->where(fn($q) => $q->whereNull('dt_fim')->orWhereDate('dt_fim', '>=', $hoje->toDateString()))
+            ->whereHas('faixas')
+            ->orderBy('dt_inicio')
             ->get();
 
-        // Faixa atual (a mais alta que ele alcançou)
-        $faixaAtual = $faixas->filter(function ($faixa) use ($pontuacaoTotal) {
-            return $pontuacaoTotal >= $faixa->pontos_min && $pontuacaoTotal <= $faixa->pontos_max;
-        })->sortByDesc('pontos_min')->first();
+        $faixaAtual = null;
+        $proximaFaixa = null;
+        $campanhaAtual = null;
 
-        // Próxima faixa (a mais próxima que ele ainda não alcançou)
-        $proximaFaixa = $faixas->filter(function ($faixa) use ($pontuacaoTotal) {
-            return $pontuacaoTotal < $faixa->pontos_min;
-        })->sortBy('pontos_min')->first();
+        // 3) Determina a campanha/faixa atual (a maior faixa cujo min/max contem a pontuação)
+        foreach ($campanhasAtivas as $campanha) {
+            $faixa = $campanha->faixas
+                ->filter(fn(PremioFaixa $f) =>
+                    $pontuacaoTotal >= (float)$f->pontos_min
+                    && ($f->pontos_max === null || $pontuacaoTotal <= (float)$f->pontos_max)
+                )
+                ->sortByDesc('pontos_min')
+                ->first();
 
-        // Define a campanha principal como a da faixa atual (prioritária)
-        $campanhaAtual = $faixaAtual?->premio;
-        $campanhaProxima = $proximaFaixa?->premio;
+            if ($faixa) {
+                $faixaAtual = $faixa;
+                $campanhaAtual = $campanha;
+
+                // Próxima faixa dentro da mesma campanha
+                $proximaFaixa = $campanha->faixas
+                    ->filter(fn(PremioFaixa $f) => $pontuacaoTotal < (float)$f->pontos_min)
+                    ->sortBy('pontos_min')
+                    ->first();
+                break;
+            }
+        }
+
+        // 4) Caso não tenha faixa atual, assume a campanha que possui a menor faixa acima da pontuação
+        if (!$campanhaAtual) {
+            $candidato = $campanhasAtivas->map(function ($campanha) use ($pontuacaoTotal) {
+                $prox = $campanha->faixas
+                    ->filter(fn(PremioFaixa $f) => $pontuacaoTotal < (float)$f->pontos_min)
+                    ->sortBy('pontos_min')
+                    ->first();
+                return $prox ? ['campanha' => $campanha, 'proxima' => $prox] : null;
+            })->filter()->sortBy(fn ($x) => $x['proxima']->pontos_min)->first();
+
+            if ($candidato) {
+                $campanhaAtual = $candidato['campanha'];
+                $proximaFaixa  = $candidato['proxima'];
+            }
+        }
 
         $diasRestantes = $campanhaAtual
-            ? Carbon::parse($campanhaAtual->dt_fim)->diffInDays($hoje)
-            : ($campanhaProxima ? Carbon::parse($campanhaProxima->dt_fim)->diffInDays($hoje) : 0);
+            ? Carbon::parse($campanhaAtual->dt_fim)->diffInDays($hoje, false)
+            : 0;
 
         return [
-            'campanha' => $campanhaAtual ?? $campanhaProxima,
-            'faixa_atual' => $faixaAtual,
-            'proxima_faixa' => $proximaFaixa,
-            'dias_restantes' => $diasRestantes,
-            'pontuacao_total' => $pontuacaoTotal,
+            'campanha'         => $campanhaAtual,
+            'faixa_atual'      => $faixaAtual,
+            'proxima_faixa'    => $proximaFaixa,
+            'dias_restantes'   => max(0, $diasRestantes),
+            'pontuacao_total'  => $pontuacaoTotal,
         ];
     }
 

@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property int $id
  * @property int $id_premio
- * @property int $pontos_min
- * @property int|null $pontos_max
+ * @property float|int $pontos_min
+ * @property float|int|null $pontos_max
  * @property bool|null $acompanhante
  * @property string|null $descricao
  * @property float|null $vl_viagem
@@ -17,7 +17,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class PremioFaixa extends Model
 {
     protected $table = 'premio_faixas';
-
     public $timestamps = false;
 
     protected $fillable = [
@@ -31,18 +30,13 @@ class PremioFaixa extends Model
 
     protected $casts = [
         'acompanhante' => 'boolean',
-        'vl_viagem' => 'float',
+        'vl_viagem'    => 'float',
     ];
 
-    /**
-     * Relacionamento: faixa pertence a um prêmio.
-     */
     public function premio(): BelongsTo
     {
         return $this->belongsTo(Premio::class, 'id_premio');
     }
-
-    // Accessors formatados
 
     public function getValorViagemFormatadoAttribute(): ?string
     {
@@ -53,15 +47,15 @@ class PremioFaixa extends Model
 
     public function getPontosRangeFormatadoAttribute(): string
     {
-        $min = number_format($this->pontos_min, 0, '', '.');
-        $max = $this->pontos_max ? number_format($this->pontos_max, 0, '', '.') : '∞';
+        $min = number_format((float)$this->pontos_min, 0, '', '.');
+        $max = $this->pontos_max !== null
+            ? number_format((float)$this->pontos_max, 0, '', '.')
+            : '∞';
         return "$min a $max";
     }
 
     public function getAcompanhanteLabelAttribute(): string
     {
-        return $this->acompanhante
-            ? 'Inclui acompanhante'
-            : 'Sem acompanhante';
+        return $this->acompanhante ? 'Inclui acompanhante' : 'Sem acompanhante';
     }
 }

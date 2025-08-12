@@ -4,25 +4,64 @@ namespace App\Infra\Repositories;
 
 use App\Domain\Premios\Contracts\PremioRepository;
 use App\Models\Premio;
-use Carbon\CarbonImmutable;
-use Illuminate\Support\Collection;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Config;
 
 class EloquentPremioRepository implements PremioRepository
 {
-    public function listarAtivos(): Collection
+    /**
+     * @param array<string,mixed> $filtros
+     */
+    public function listarPorFiltros(array $filtros): LengthAwarePaginator
     {
-        $tz = Config::get('app.timezone', 'America/Belem');
-        $hoje = CarbonImmutable::now($tz)->toDateString();
+        $ordenarPor = $filtros['ordenar_por'] ?? 'dt_inicio';
+        $orden      = $filtros['orden'] ?? 'asc';
+        $perPage    = (int) ($filtros['per_page'] ?? 15);
+        $page       = (int) ($filtros['page'] ?? 1);
+        $includeFaixas = (bool) ($filtros['include_faixas'] ?? false);
 
-        return Premio::query()
-            ->with(['faixas' => fn ($q) => $q->orderBy('pontos_min')])
-            ->where('status', 1)
-            ->whereDate('dt_inicio', '<=', $hoje)
-            ->where(function ($q) use ($hoje) {
-                $q->whereNull('dt_fim')->orWhereDate('dt_fim', '>=', $hoje);
-            })
-            ->orderByDesc('dt_inicio')
-            ->get();
+        // Whitelist definitiva para evitar SQL injection em orderBy
+        $orderMap = [
+            'id'        => 'premios.id',
+            'titulo'    => 'premios.titulo',
+            'dt_inicio' => 'premios.dt_inicio',
+            'dt_fim'    => 'premios.dt_fim',
+        ];
+        $orderColumn = $orderMap[$ordenarPor] ?? 'premios.dt_inicio';
+        $orderDir    = $orden === 'desc' ? 'desc' : 'asc';
+
+        $q = Premio::query();
+
+        if ($includeFaixas) {
+            $q->with(['faixas' => fn($faixas) => $faixas->orderBy('pontos_min')]);
+        }
+
+        if (isset($filtros['status'])) {
+            $q->where('status', (int) $filtros['status']);
+        }
+
+        if (!empty($filtros['ids']) && is_array($filtros['ids'])) {
+            $q->whereIn('id', $filtros['ids']);
+        }
+
+        if (!empty($filtros['titulo'])) {
+            $q->where('titulo', 'like', '%'.$filtros['titulo'].'%');
+        }
+
+        if (($filtros['somente_ativas'] ?? false) === true) {
+            // Usa o scope do Model; se vier data_base, utiliza-a
+            $dataBase = $filtros['data_base'] ?? null;
+            if ($dataBase === null) {
+                // Respeita timezone da app
+                $tz       = Config::get('app.timezone', 'America/Belem');
+                $dataBase = now($tz)->toDateString();
+            }
+            $q->ativosNoDia($dataBase);
+        }
+
+        $q->orderBy($orderColumn, $orderDir);
+
+        // Importante: sempre paginar para respostas grandes
+        return $q->paginate(perPage: $perPage, page: $page);
     }
 }

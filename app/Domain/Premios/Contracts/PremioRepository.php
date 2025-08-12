@@ -2,16 +2,17 @@
 
 namespace App\Domain\Premios\Contracts;
 
-use Illuminate\Support\Collection;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
+/**
+ * Contrato de acesso a campanhas/prêmios.
+ */
 interface PremioRepository
 {
     /**
-     * Retorna campanhas ativas em 'hoje' (America/Belem).
+     * Lista campanhas conforme filtros livres (para GET /premios).
      *
-     * Regra: status=1 AND dt_inicio <= hoje AND (dt_fim IS NULL OR dt_fim >= hoje)
-     *
-     * @return Collection<int, \App\Models\Premio>
+     * @param array<string, mixed> $filtros
      */
-    public function listarAtivos(): Collection;
+    public function listarPorFiltros(array $filtros): LengthAwarePaginator;
 }

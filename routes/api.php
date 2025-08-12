@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CampanhasController;
 use App\Http\Controllers\GaleriaController;
 use App\Http\Controllers\LojaController;
 use App\Http\Controllers\PlantasBaixasController;
@@ -18,12 +19,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/pontuacoes', [PontuacaoController::class, 'index']);
+    Route::get('/campanhas/faixas-profissional', [CampanhasController::class, 'faixasProfissional'])
+        ->name('campanhas.faixas-profissional');
+
     Route::get('/pontuacoes/info-home', [PontuacaoController::class, 'infoHome']);
     Route::post('/pontuacoes', [PontuacaoController::class, 'store']);
 
 
     Route::get('/campanhas/banners', [BannerController::class, 'index']);
-    Route::get('/premios', [PremioController::class, 'ativos']);
+    Route::get('/premios', [PremioController::class, 'index'])->name('premios.index');
     Route::get('/lojas', [LojaController::class, 'index']);
     Route::get('/usuarios', [UsuarioController::class, 'usuarios']);
     Route::get('/ranking/top100', [RankingController::class, 'top100']);

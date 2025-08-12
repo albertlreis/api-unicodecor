@@ -17,15 +17,14 @@ use Carbon\Carbon;
  * @property string|null $banner
  * @property float|null $pontos
  * @property float|null $valor_viagem
- * @property string|null $dt_inicio
- * @property string|null $dt_fim
- * @property string|null $dt_cadastro
+ * @property Carbon|string|null $dt_inicio
+ * @property Carbon|string|null $dt_fim
+ * @property Carbon|string|null $dt_cadastro
  * @property int|null $status
  */
 class Premio extends Model
 {
     protected $table = 'premios';
-
     public $timestamps = false;
 
     protected $fillable = [
@@ -52,50 +51,25 @@ class Premio extends Model
         'status'       => 'integer',
     ];
 
-    // -- Relacionamentos
-
+    /** @return HasMany */
     public function faixas(): HasMany
     {
         return $this->hasMany(PremioFaixa::class, 'id_premio')->orderBy('pontos_min');
     }
 
-    // -- Accessors
-
+    // Accessors utilitários (mantidos sem HTML):
     public function getDtCadastroFormatadoAttribute(): ?string
     {
         return $this->dt_cadastro ? Carbon::parse($this->dt_cadastro)->format('d/m/Y') : null;
     }
-
     public function getDtInicioFormatadoAttribute(): ?string
     {
         return $this->dt_inicio ? Carbon::parse($this->dt_inicio)->format('d/m/Y') : null;
     }
-
     public function getDtFimFormatadoAttribute(): ?string
     {
         return $this->dt_fim ? Carbon::parse($this->dt_fim)->format('d/m/Y') : null;
     }
-
-    public function getStatusLabelAttribute(): string
-    {
-        return match ($this->status) {
-            0 => '<span class="label label-warning">Desabilitado</span>',
-            1 => '<span class="label label-primary">Ativo</span>',
-            2 => '<span class="label label-danger">Excluído</span>',
-            default => '<span class="label label-secondary">Desconhecido</span>',
-        };
-    }
-
-    public function getValorViagemFormatadoAttribute(): ?string
-    {
-        return $this->valor_viagem ? number_format($this->valor_viagem, 2, ',', '.') : null;
-    }
-
-    public function getPontosFormatadoAttribute(): ?string
-    {
-        return $this->pontos ? number_format($this->pontos, 2, ',', '.') : null;
-    }
-
 
     /**
      * Escopo para campanhas ativas na data informada (padrão: hoje).
