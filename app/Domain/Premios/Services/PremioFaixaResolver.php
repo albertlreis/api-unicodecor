@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Domain\Campanhas\Services;
+namespace App\Domain\Premios\Services;
 
 use App\Models\Ponto;
 use App\Models\Premio;
@@ -9,10 +9,9 @@ use App\Support\YearRange;
 use Carbon\Carbon;
 
 /**
- * Serviço que calcula campanha/faixas do profissional em uma data-base
- * e, opcionalmente, "proximas_faixas" e "proximas_campanhas".
+ * Serviço para resolver faixas e prêmios do profissional numa data base.
  */
-class CampanhaFaixaResolver
+final class PremioFaixaResolver
 {
     /**
      * @param int         $usuarioId

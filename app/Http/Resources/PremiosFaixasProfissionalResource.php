@@ -19,7 +19,7 @@ use Illuminate\Support\Carbon;
  *   proximas_campanhas: array<int, array{id:int,titulo:string|null,pontos:float|int|null,faltam:int}>
  * } $resource
  */
-class CampanhasFaixasProfissionalResource extends JsonResource
+class PremiosFaixasProfissionalResource extends JsonResource
 {
     /**
      * @param Request $request

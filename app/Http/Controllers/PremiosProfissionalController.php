@@ -3,28 +3,31 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\FaixasProfissionalRequest;
-use App\Http\Resources\CampanhasFaixasProfissionalResource;
-use App\Domain\Campanhas\Services\CampanhaFaixaResolver;
+use App\Http\Resources\PremiosFaixasProfissionalResource;
+use App\Domain\Premios\Services\PremioFaixaResolver;
 use Illuminate\Http\JsonResponse;
 
 /**
- * Controlador para recursos de campanhas voltados ao PROFISSIONAL.
+ * Controlador de PRÊMIOS voltado ao PROFISSIONAL (perfil 2).
  */
-class CampanhasController extends Controller
+class PremiosProfissionalController extends Controller
 {
     public function __construct(
-        private readonly CampanhaFaixaResolver $resolver
+        private readonly PremioFaixaResolver $resolver
     ) {}
 
     /**
-     * GET /campanhas/faixas-profissional
+     * GET /premios/faixas-profissional
+     *
+     * Retorna faixas e informações da campanha (prêmio) atual do profissional,
+     * com opção de incluir próximas faixas e próximos prêmios.
      *
      * @param FaixasProfissionalRequest $request
      * @return JsonResponse
      */
     public function faixasProfissional(FaixasProfissionalRequest $request): JsonResponse
     {
-        $user  = $request->user(); // autorizado no FormRequest (perfil 2)
+        $user  = $request->user(); // Autorizado no FormRequest (perfil 2)
         $hoje  = $request->input('data_base'); // ISO Y-m-d ou null
         $incFx = (bool) $request->input('incluir_proximas_faixas', true);
         $incCp = (bool) $request->input('incluir_proximas_campanhas', true);
@@ -38,8 +41,8 @@ class CampanhasController extends Controller
 
         return response()->json([
             'sucesso'  => true,
-            'mensagem' => 'Faixas e campanha do profissional',
-            'dados'    => (new CampanhasFaixasProfissionalResource($payload))->toArray($request),
+            'mensagem' => 'Faixas e prêmios do profissional',
+            'dados'    => (new PremiosFaixasProfissionalResource($payload))->toArray($request),
         ]);
     }
 }
