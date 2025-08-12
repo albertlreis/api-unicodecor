@@ -22,9 +22,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/campanhas/faixas-profissional', [CampanhasController::class, 'faixasProfissional'])
         ->name('campanhas.faixas-profissional');
 
-    Route::get('/pontuacoes/info-home', [PontuacaoController::class, 'infoHome']);
     Route::post('/pontuacoes', [PontuacaoController::class, 'store']);
-
 
     Route::get('/campanhas/banners', [BannerController::class, 'index']);
     Route::get('/premios', [PremioController::class, 'index'])->name('premios.index');
