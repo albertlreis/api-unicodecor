@@ -37,7 +37,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/ranking/geral', [RankingController::class, 'index']);
     Route::get('/ranking/detalhado', [RankingController::class, 'detalhado']);
     Route::get('/rateio', [RateioController::class, 'index']);
+
     Route::get('/plantas-baixas', [PlantasBaixasController::class, 'index']);
+
+    Route::get('/plantas-baixas/construtoras', [PlantasBaixasController::class, 'construtoras']);
+    Route::get('/plantas-baixas/construtoras/{id}/empreendimentos', [PlantasBaixasController::class, 'empreendimentosPorConstrutora']);
+
+    Route::post('/plantas-baixas', [PlantasBaixasController::class, 'store']);
+    Route::put('/plantas-baixas/{id}', [PlantasBaixasController::class, 'update']);
+    Route::delete('/plantas-baixas/{id}', [PlantasBaixasController::class, 'destroy']);
 
     Route::prefix('galerias')->group(function () {
         Route::get('/', [GaleriaController::class, 'index']);
