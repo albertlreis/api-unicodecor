@@ -35,8 +35,20 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/banners/{banner}', [BannerController::class, 'destroy'])->name('banners.destroy');
     Route::patch('/banners/{banner}/status', [BannerController::class, 'toggleStatus'])->name('banners.toggleStatus');
 
-    // Demais recursos
+    Route::get('/lojas/ativas', [LojaController::class, 'ativas']);
+
     Route::get('/lojas', [LojaController::class, 'index']);
+    Route::post('/lojas', [LojaController::class, 'store']);
+    Route::get('/lojas/{loja}', [LojaController::class, 'show']);
+    Route::match(['put','patch'], '/lojas/{loja}', [LojaController::class, 'update']);
+    Route::delete('/lojas/{loja}', [LojaController::class, 'destroy']);
+
+    Route::patch('/lojas/{loja}/status', [LojaController::class, 'alterarStatus']);
+
+    // Extras
+    Route::post('/lojas/{id}/restore', [LojaController::class, 'restore']);
+    Route::patch('/lojas/{loja}/status', [LojaController::class, 'alterarStatus']);
+
     Route::get('/usuarios', [UsuarioController::class, 'usuarios']);
     Route::get('/ranking/top100', [RankingController::class, 'top100']);
     Route::get('/ranking/geral', [RankingController::class, 'index']);

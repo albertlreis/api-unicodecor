@@ -2,22 +2,26 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * @property int $id
- * @property string $nome
  * @property string|null $razao
- * @property string|null $email
+ * @property string $nome
  * @property string|null $cnpj
+ * @property string|null $fone
+ * @property string|null $endereco
+ * @property string|null $eletronico
+ * @property string|null $email
+ * @property string|null $apresentacao
+ * @property string|null $logomarca
  * @property int $status
- * @property string|null $dt_cadastro
  */
 class Loja extends Model
 {
     protected $table = 'lojas';
-
     public $timestamps = false;
 
     protected $fillable = [
@@ -43,23 +47,34 @@ class Loja extends Model
         'cnpj',
         'apresentacao',
         'maps',
-        'status'
+        'status',
     ];
 
-    // -- Accessors
+    protected $appends = ['logomarca_url'];
 
-    public function getDtCadastroFormatadoAttribute(): ?string
+    /** URL pública da logomarca (aceita já-URL do legado). */
+    public function getLogomarcaUrlAttribute(): ?string
     {
-        return $this->dt_cadastro ? Carbon::parse($this->dt_cadastro)->format('d/m/Y') : null;
+        if (!$this->logomarca) return null;
+        if (preg_match('~^https?://~i', $this->logomarca)) return $this->logomarca;
+        return Storage::disk('public')->url($this->logomarca);
     }
 
-    public function getStatusLabelAttribute(): string
+    /** Escopo: apenas ativas (status=1). */
+    public function scopeAtivas(Builder $q): Builder
     {
-        return match ($this->status) {
-            0 => '<span class="label label-warning">Desabilitado</span>',
-            1 => '<span class="label label-primary">Ativo</span>',
-            2 => '<span class="label label-danger">Excluído</span>',
-            default => '<span class="label label-secondary">Desconhecido</span>',
-        };
+        return $q->where('status', 1);
+    }
+
+    /** Mutator CNPJ tolerante a null; mantém máscara padrão se possível. */
+    public function setCnpjAttribute($value): void
+    {
+        if ($value === null) { $this->attributes['cnpj'] = null; return; }
+        $digits = preg_replace('/\D+/', '', (string)$value);
+        if (strlen($digits) === 14) {
+            $this->attributes['cnpj'] = vsprintf('%02s.%03s.%03s/%04s-%02s', str_split($digits));
+        } else {
+            $this->attributes['cnpj'] = (string)$value;
+        }
     }
 }
