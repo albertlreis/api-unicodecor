@@ -39,7 +39,7 @@ class PremioController extends Controller
         return response()->json([
             'sucesso'  => true,
             'mensagem' => 'Lista de prêmios',
-            'dados'    => PremioResource::collection($paginator->items()),
+            'data'    => PremioResource::collection($paginator->items()),
             'meta'     => [
                 'current_page' => $paginator->currentPage(),
                 'per_page'     => $paginator->perPage(),

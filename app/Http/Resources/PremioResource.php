@@ -19,6 +19,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class PremioResource extends JsonResource
 {
+    /** @return array<string,mixed> */
     public function toArray($request): array
     {
         return [
@@ -36,15 +37,19 @@ class PremioResource extends JsonResource
             'dt_fim_formatado'    => $this->dt_fim ? $this->dt_fim->format('d/m/Y') : null,
             'status'              => $this->status,
             'faixas'              => $this->whenLoaded('faixas', function () {
-                return $this->faixas->map(fn($f) => [
-                    'id'                     => $f->id,
-                    'range'                  => $f->pontos_range_formatado,
-                    'descricao'              => $f->descricao,
-                    'acompanhante_label'     => $f->acompanhante_label,
-                    'valor_viagem_formatado' => $f->valor_viagem_formatado,
-                    'pontos_min'             => $f->pontos_min,
-                    'pontos_max'             => $f->pontos_max,
-                ]);
+                return $this->faixas->map(function ($f) {
+                    return [
+                        'id'                     => $f->id,
+                        'pontos_min'             => $f->pontos_min,
+                        'pontos_max'             => $f->pontos_max,
+                        'vl_viagem'              => $f->vl_viagem,
+                        'acompanhante'           => (int) $f->acompanhante,
+                        'range'                  => $f->pontos_range_formatado,
+                        'acompanhante_label'     => $f->acompanhante_label,
+                        'valor_viagem_formatado' => $f->valor_viagem_formatado,
+                        'descricao'              => $f->descricao,
+                    ];
+                });
             }),
         ];
     }

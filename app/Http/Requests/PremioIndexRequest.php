@@ -25,17 +25,22 @@ class PremioIndexRequest extends FormRequest
         return true;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** @return array<string, mixed> */
     public function rules(): array
     {
         return [
             'status'          => ['nullable', 'integer', 'in:0,1,2'],
             'somente_ativas'  => ['nullable', 'boolean'],
             'titulo'          => ['nullable', 'string', 'max:200'],
+
+            // nomes oficiais
             'ordenar_por'     => ['nullable', 'in:dt_inicio,dt_fim,titulo,id'],
             'orden'           => ['nullable', 'in:asc,desc'],
+
+            // aliases aceitos pelo front
+            'orderBy'         => ['nullable', 'in:dt_inicio,dt_fim,titulo,id'],
+            'orderDir'        => ['nullable', 'in:asc,desc'],
+
             'page'            => ['nullable', 'integer', 'min:1'],
             'per_page'        => ['nullable', 'integer', 'min:1', 'max:100'],
             'include_faixas'  => ['nullable', 'boolean'],
@@ -46,17 +51,20 @@ class PremioIndexRequest extends FormRequest
     }
 
     /**
-     * Normaliza tipos e define defaults seguros.
-     *
-     * @return void
+     * Normaliza tipos, aplica aliases e defaults.
      */
     protected function prepareForValidation(): void
     {
+        // aliases do front → nomes oficiais
+        $ordenar = $this->input('ordenar_por', $this->input('orderBy'));
+        $orden   = $this->input('orden', $this->input('orderDir'));
+
         $this->merge([
-            'somente_ativas' => $this->toBoolean($this->input('somente_ativas')),
+            'ordenar_por'    => $ordenar ?? 'dt_inicio',
+            'orden'          => $orden   ?? 'asc',
+            // ⚠️ admin precisa ver tudo por padrão
+            'somente_ativas' => $this->toBoolean($this->input('somente_ativas', false)),
             'include_faixas' => $this->toBoolean($this->input('include_faixas')),
-            'orden'          => $this->input('orden', 'asc'),
-            'ordenar_por'    => $this->input('ordenar_por', 'dt_inicio'),
             'page'           => (int) $this->input('page', 1),
             'per_page'       => (int) $this->input('per_page', 15),
         ]);
