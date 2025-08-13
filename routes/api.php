@@ -27,8 +27,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/premios', [PremioController::class, 'index']);
 
-    // Banners relacionados a prêmios (se ainda necessário)
-    Route::get('/premios/banners', [BannerController::class, 'index'])->name('premios.banners');
+    Route::get('/banners', [BannerController::class, 'index'])->name('banners.index');
+    Route::get('/banners/{banner}', [BannerController::class, 'show'])->name('banners.show');
+    Route::post('/banners', [BannerController::class, 'store'])->name('banners.store');
+    Route::put('/banners/{banner}', [BannerController::class, 'update'])->name('banners.update');
+    Route::patch('/banners/{banner}', [BannerController::class, 'update'])->name('banners.patch'); // opcional
+    Route::delete('/banners/{banner}', [BannerController::class, 'destroy'])->name('banners.destroy');
+    Route::patch('/banners/{banner}/status', [BannerController::class, 'toggleStatus'])->name('banners.toggleStatus');
 
     // Demais recursos
     Route::get('/lojas', [LojaController::class, 'index']);
