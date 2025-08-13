@@ -25,7 +25,9 @@ final class PremioFaixaResolver
      *   dias_restantes: int,
      *   pontuacao_total: float,
      *   proximas_faixas?: array<int, array<string,mixed>>,
-     *   proximas_campanhas?: array<int, array{id:int,titulo:string|null,pontos:float|int|null,faltam:int}>
+     *   proximas_campanhas?: array<int, array{
+     *       id:int,titulo:string|null,pontos:float|int|null,pontos_formatado:string|null,faltam:int,faltam_formatado:string
+     *   }>
      * }
      */
     public function resolver(
@@ -45,12 +47,18 @@ final class PremioFaixaResolver
         // 2) Campanhas ativas na data-base, com faixas
         $campanhasAtivas = Premio::query()
             ->with(['faixas' => fn($q) => $q->orderBy('pontos_min')])
-            ->where('status', 1)
-            ->whereDate('dt_inicio', '<=', $hoje->toDateString())
-            ->where(fn($q) => $q->whereNull('dt_fim')->orWhereDate('dt_fim', '>=', $hoje->toDateString()))
+            ->ativosNoDia($hoje->toDateString())
             ->whereHas('faixas')
-            ->orderBy('dt_inicio')
-            ->get();
+            ->get()
+            // DESCARTA campanhas cuja faixa máxima é menor que a pontuação do profissional
+            ->filter(function (Premio $campanha) use ($pontuacaoTotal) {
+                $temIntervaloAberto = $campanha->faixas->contains(fn (PremioFaixa $f) => $f->pontos_max === null);
+                if ($temIntervaloAberto) return true;
+
+                $pontosMaxCampanha = $campanha->faixas->max('pontos_max');
+                return $pontosMaxCampanha === null || $pontuacaoTotal <= (float) $pontosMaxCampanha;
+            })
+            ->values();
 
         $faixaAtual = null;
         $proximaFaixa = null;
@@ -69,6 +77,7 @@ final class PremioFaixaResolver
             if ($faixa) {
                 $faixaAtual    = $faixa;
                 $campanhaAtual = $campanha;
+
                 $proximaFaixa  = $campanha->faixas
                     ->filter(fn(PremioFaixa $f) => $pontuacaoTotal < (float) $f->pontos_min)
                     ->sortBy('pontos_min')
@@ -79,13 +88,17 @@ final class PremioFaixaResolver
 
         // 4) Sem faixa atual? escolhe a campanha com a menor faixa acima da pontuação
         if (!$campanhaAtual) {
-            $candidato = $campanhasAtivas->map(function ($campanha) use ($pontuacaoTotal) {
-                $prox = $campanha->faixas
-                    ->filter(fn(PremioFaixa $f) => $pontuacaoTotal < (float) $f->pontos_min)
-                    ->sortBy('pontos_min')
-                    ->first();
-                return $prox ? ['campanha' => $campanha, 'proxima' => $prox] : null;
-            })->filter()->sortBy(fn ($x) => $x['proxima']->pontos_min)->first();
+            $candidato = $campanhasAtivas
+                ->map(function (Premio $campanha) use ($pontuacaoTotal) {
+                    $prox = $campanha->faixas
+                        ->filter(fn(PremioFaixa $f) => $pontuacaoTotal < (float) $f->pontos_min)
+                        ->sortBy('pontos_min')
+                        ->first();
+                    return $prox ? ['campanha' => $campanha, 'proxima' => $prox] : null;
+                })
+                ->filter()
+                ->sortBy(fn ($x) => $x['proxima']->pontos_min)
+                ->first();
 
             if ($candidato) {
                 $campanhaAtual = $candidato['campanha'];
@@ -93,55 +106,68 @@ final class PremioFaixaResolver
             }
         }
 
-        $diasRestantes = $campanhaAtual
-            ? Carbon::parse($campanhaAtual->dt_fim)->diffInDays($hoje, false)
-            : 0;
+        // 5) Dias restantes (corrigido)
+        // Conta em dias inteiros de hoje (startOfDay) até o fim (endOfDay), nunca negativo.
+        $diasRestantes = 0;
+        if ($campanhaAtual && $campanhaAtual->dt_fim) {
+            $agora = $hoje->copy()->startOfDay();
+            $fim   = Carbon::parse($campanhaAtual->dt_fim)->endOfDay();
+            $diasRestantes = $agora->diffInDays($fim, false);
+            $diasRestantes = max(0, $diasRestantes);
+        }
 
         $out = [
             'campanha'        => $campanhaAtual,
             'faixa_atual'     => $faixaAtual,
             'proxima_faixa'   => $proximaFaixa,
-            'dias_restantes'  => max(0, $diasRestantes),
+            'dias_restantes'  => $diasRestantes,
             'pontuacao_total' => $pontuacaoTotal,
         ];
 
-        // 5) Próximas faixas (dentro da campanha atual)
+        // 6) Próximas faixas (na campanha atual) — com campos formatados BR
         if ($incluirProximasFaixas && $campanhaAtual) {
             $out['proximas_faixas'] = $campanhaAtual->faixas
                 ->whereNotNull('pontos_min')
-                ->filter(fn ($f) => (float) $f->pontos_min > $pontuacaoTotal)
+                ->filter(fn (PremioFaixa $f) => (float) $f->pontos_min > $pontuacaoTotal)
                 ->sortBy('pontos_min')
                 ->values()
-                ->map(fn ($f) => [
+                ->map(fn (PremioFaixa $f) => [
                     'id'                     => $f->id,
-                    'range'                  => $f->pontos_range_formatado,
                     'descricao'              => $f->descricao,
+                    'pontos_min'             => (float)$f->pontos_min,
+                    'pontos_min_formatado'   => number_format((float)$f->pontos_min, 0, ',', '.'),
+                    'pontos_max'             => $f->pontos_max !== null ? (float)$f->pontos_max : null,
+                    'pontos_max_formatado'   => $f->pontos_max !== null ? number_format((float)$f->pontos_max, 0, ',', '.') : null,
+                    'range'                  => $f->pontos_max === null
+                        ? 'a partir de ' . number_format((float)$f->pontos_min, 0, ',', '.')
+                        : number_format((float)$f->pontos_min, 0, ',', '.') . ' a ' . number_format((float)$f->pontos_max, 0, ',', '.'),
                     'acompanhante_label'     => $f->acompanhante_label,
-                    'valor_viagem_formatado' => $f->valor_viagem_formatado,
-                    'pontos_min'             => $f->pontos_min,
-                    'pontos_max'             => $f->pontos_max,
+                    'valor_viagem_formatado' => $f->valor_viagem_formatado, // já BR no accessor
                 ])->all();
         } else {
             $out['proximas_faixas'] = [];
         }
 
-        // 6) Próximas campanhas “alcançáveis” (ativas hoje, sem faixas, pontos > pontuacao_total)
+        // 7) Próximas campanhas “alcançáveis” — com campos formatados BR
         if ($incluirProximasCampanhas) {
             $out['proximas_campanhas'] = Premio::query()
                 ->with('faixas')
-                ->where('status', 1)
-                ->whereDate('dt_inicio', '<=', $hoje->toDateString())
-                ->where(fn($q) => $q->whereNull('dt_fim')->orWhereDate('dt_fim', '>=', $hoje->toDateString()))
-                ->whereDoesntHave('faixas') // campanhas tipo TOP 100 (pontos mínimos)
+                ->ativosNoDia($hoje->toDateString())
+                ->whereDoesntHave('faixas')          // campanhas do tipo "pontos mínimos" no próprio prêmio
                 ->where('pontos', '>', $pontuacaoTotal)
                 ->orderBy('pontos')
                 ->get()
-                ->map(fn ($c) => [
-                    'id'     => $c->id,
-                    'titulo' => $c->titulo,
-                    'pontos' => $c->pontos,
-                    'faltam' => max(0, (int) round(((float) $c->pontos) - $pontuacaoTotal)),
-                ])
+                ->map(function (Premio $c) use ($pontuacaoTotal) {
+                    $faltam = max(0, (int) round(((float) $c->pontos) - $pontuacaoTotal));
+                    return [
+                        'id'                => $c->id,
+                        'titulo'            => $c->titulo,
+                        'pontos'            => $c->pontos,
+                        'pontos_formatado'  => $c->pontos !== null ? number_format((float)$c->pontos, 0, ',', '.') : null,
+                        'faltam'            => $faltam,
+                        'faltam_formatado'  => number_format($faltam, 0, ',', '.'),
+                    ];
+                })
                 ->values()
                 ->all();
         } else {

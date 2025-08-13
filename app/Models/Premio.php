@@ -72,9 +72,10 @@ class Premio extends Model
     }
 
     /**
-     * Escopo para campanhas ativas na data informada (padrão: hoje).
+     * Escopo para campanhas ATIVAS na data informada (entre início e fim).
+     * Requer: dt_inicio <= data AND dt_fim >= data (dt_fim NÃO nulo).
      *
-     * @param  Builder  $query
+     * @param  Builder      $query
      * @param  string|null  $data ISO Y-m-d
      * @return Builder
      */
@@ -82,8 +83,10 @@ class Premio extends Model
     {
         $hoje = $data ?: Carbon::today()->toDateString();
 
-        return $query->where('status', 1)
+        return $query
+            ->where('status', 1)
             ->whereDate('dt_inicio', '<=', $hoje)
-            ->where(fn ($q) => $q->whereNull('dt_fim')->orWhereDate('dt_fim', '>=', $hoje));
+            ->whereNotNull('dt_fim')
+            ->whereDate('dt_fim', '>=', $hoje);
     }
 }

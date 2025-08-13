@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\PremiosProfissionalController;
+use App\Http\Controllers\MePremiosController;
 use App\Http\Controllers\GaleriaController;
 use App\Http\Controllers\LojaController;
 use App\Http\Controllers\PlantasBaixasController;
@@ -19,15 +19,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
+    Route::get('/me/premios', [MePremiosController::class, 'index']);
+
     // Pontuações
     Route::get('/pontuacoes', [PontuacaoController::class, 'index']);
     Route::post('/pontuacoes', [PontuacaoController::class, 'store']);
 
-    // Prêmios (antigo campanhas)
-    Route::get('/premios/faixas-profissional', [PremiosProfissionalController::class, 'faixasProfissional'])
-        ->name('premios.faixas-profissional');
-
-    Route::get('/premios', [PremioController::class, 'index'])->name('premios.index');
+    Route::get('/premios', [PremioController::class, 'index']);
 
     // Banners relacionados a prêmios (se ainda necessário)
     Route::get('/premios/banners', [BannerController::class, 'index'])->name('premios.banners');

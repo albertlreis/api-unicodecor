@@ -48,14 +48,9 @@ class EloquentPremioRepository implements PremioRepository
             $q->where('titulo', 'like', '%'.$filtros['titulo'].'%');
         }
 
-        if (($filtros['somente_ativas'] ?? false) === true) {
-            // Usa o scope do Model; se vier data_base, utiliza-a
-            $dataBase = $filtros['data_base'] ?? null;
-            if ($dataBase === null) {
-                // Respeita timezone da app
-                $tz       = Config::get('app.timezone', 'America/Belem');
-                $dataBase = now($tz)->toDateString();
-            }
+        $somenteAtivas = ($filtros['somente_ativas'] ?? true) === true;
+        if ($somenteAtivas) {
+            $dataBase = $filtros['data_base'] ?? now(Config::get('app.timezone', 'America/Belem'))->toDateString();
             $q->ativosNoDia($dataBase);
         }
 
