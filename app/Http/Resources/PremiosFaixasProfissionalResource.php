@@ -67,6 +67,7 @@ class PremiosFaixasProfissionalResource extends JsonResource
                 'id'               => $campanha->id,
                 'titulo'           => $campanha->titulo,
                 'banner'           => $campanha->banner,
+                'regulamento'      => $campanha->regulamento,
                 // Datas ISO + BR
                 'dt_inicio_iso'    => self::toIso($campanha->dt_inicio),
                 'dt_fim_iso'       => self::toIso($campanha->dt_fim),

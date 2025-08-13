@@ -12,7 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
- * Controlador de pontuações (listagem, info da home e criação/atualização).
+ * Controlador de pontuações (listagem e criação).
  */
 class PontuacaoController extends Controller
 {
@@ -24,15 +24,17 @@ class PontuacaoController extends Controller
     /**
      * GET /pontuacoes
      *
-     * Lista paginada com filtros aplicados e regras por perfil.
+     * Lista paginada com filtros e regras por perfil.
      */
     public function index(PontuacaoIndexRequest $request): JsonResponse
     {
         $user = $request->user();
+
         if (!isset($user->id_perfil)) {
             throw new AccessDeniedHttpException('Perfil do usuário não identificado.');
         }
 
+        // Os dados já vêm normalizados para os nomes CANÔNICOS pelo FormRequest.
         $filtro = PontuacaoFiltro::fromArray($request->validated());
 
         $paginator = $this->repo->buscarPaginado(
@@ -43,10 +45,8 @@ class PontuacaoController extends Controller
         );
 
         return response()->json([
-            'sucesso'  => true,
-            'mensagem' => 'Lista de pontuações',
-            'dados'    => $paginator->items(),
-            'meta'     => [
+            'data' => PontoResource::collection($paginator->getCollection()),
+            'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'per_page'     => $paginator->perPage(),
                 'total'        => $paginator->total(),
@@ -68,8 +68,7 @@ class PontuacaoController extends Controller
         $ponto = $this->command->salvar($data, $usuario);
 
         return response()->json([
-            'success' => true,
-            'data'    => new PontoResource($ponto),
+            'data' => new PontoResource($ponto),
         ]);
     }
 }
