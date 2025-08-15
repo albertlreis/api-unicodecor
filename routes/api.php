@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ConstrutorasController;
 use App\Http\Controllers\MePremiosController;
 use App\Http\Controllers\GaleriaController;
 use App\Http\Controllers\LojaController;
@@ -68,4 +69,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [GaleriaController::class, 'index']);
         Route::get('{id}', [GaleriaController::class, 'show']);
     });
+
+    Route::get('/construtoras', [ConstrutorasController::class, 'index']);
+    Route::post('/construtoras', [ConstrutorasController::class, 'store']);
+    Route::get('/construtoras/{id}', [ConstrutorasController::class, 'show']);
+    Route::match(['put','patch'], '/construtoras/{id}', [ConstrutorasController::class, 'update']);
+    Route::delete('/construtoras/{id}', [ConstrutorasController::class, 'destroy']);
+    Route::patch('/construtoras/{id}/status', [ConstrutorasController::class, 'setStatus']);
 });

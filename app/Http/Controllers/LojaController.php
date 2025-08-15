@@ -36,7 +36,7 @@ class LojaController extends Controller
     /** GET /lojas/ativas (sem paginação) */
     public function ativas(): JsonResponse
     {
-        $itens = \App\Models\Loja::ativas()->orderBy('nome')->get();
+        $itens = Loja::ativas()->orderBy('nome')->get();
         return LojaResource::collection($itens)->response();
     }
 
