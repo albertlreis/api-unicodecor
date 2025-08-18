@@ -55,7 +55,7 @@ class ConstrutorasController extends Controller
         $paginator = $query->paginate($perPage)->appends($request->query());
 
         return response()->json([
-            'results' => ConstrutoraResource::collection($paginator->items()),
+            'data' => ConstrutoraResource::collection($paginator->items()),
             'meta'    => [
                 'current_page' => $paginator->currentPage(),
                 'per_page'     => $paginator->perPage(),

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ConstrutorasController;
+use App\Http\Controllers\EmpreendimentoController;
 use App\Http\Controllers\MePremiosController;
 use App\Http\Controllers\GaleriaController;
 use App\Http\Controllers\LojaController;
@@ -76,4 +77,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::match(['put','patch'], '/construtoras/{id}', [ConstrutorasController::class, 'update']);
     Route::delete('/construtoras/{id}', [ConstrutorasController::class, 'destroy']);
     Route::patch('/construtoras/{id}/status', [ConstrutorasController::class, 'setStatus']);
+
+    Route::apiResource('empreendimentos', EmpreendimentoController::class);
+    Route::patch('empreendimentos/{empreendimento}/status', [EmpreendimentoController::class, 'updateStatus']);
+
 });

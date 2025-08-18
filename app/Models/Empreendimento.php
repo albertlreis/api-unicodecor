@@ -5,38 +5,60 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
- * Class Empreendimento
- *
  * @property int $idEmpreendimentos
  * @property int $idConstrutoras
  * @property string|null $nome
  * @property string|null $site
  * @property string|null $imagem
- * @property int|null $status
- *
- * @property-read Construtora $construtora
- * @property-read PlantaBaixa[] $plantasBaixas
+ * @property int $status
+ * @property-read string|null $imagem_url
  */
 class Empreendimento extends Model
 {
+    /** @var string */
     protected $table = 'empreendimentos';
+
+    /** @var string */
     protected $primaryKey = 'idEmpreendimentos';
+
+    /** @var bool */
     public $timestamps = false;
 
+    /** @var array<int,string> */
     protected $fillable = [
         'idConstrutoras',
         'nome',
         'site',
         'imagem',
-        'status'
+        'status',
     ];
 
+    /** @var array<string,string> */
+    protected $casts = [
+        'status' => 'int',
+    ];
+
+    /** @var array<int,string> */
+    protected $appends = ['imagem_url'];
+
     /**
-     * Retorna a construtora associada ao empreendimento.
+     * Usa a PK como route key (idEmpreendimentos).
      *
-     * @return BelongsTo
+     * @return string
+     */
+    public function getRouteKeyName(): string
+    {
+        return $this->getKeyName();
+    }
+
+    /**
+     * Construtora à qual o empreendimento pertence.
+     *
+     * @return BelongsTo<Construtora,Empreendimento>
      */
     public function construtora(): BelongsTo
     {
@@ -44,7 +66,27 @@ class Empreendimento extends Model
     }
 
     /**
-     * Retorna as plantas baixas associadas ao empreendimento.
+     * URL pública da imagem.
+     * - Se $imagem já começar com http/https, retorna como está (host externo).
+     * - Caso contrário, resolve via Storage 'public'.
+     *
+     * @return string|null
+     */
+    public function getImagemUrlAttribute(): ?string
+    {
+        if (!$this->imagem) {
+            return null;
+        }
+
+        if (Str::startsWith($this->imagem, ['http://', 'https://'])) {
+            return $this->imagem;
+        }
+
+        return Storage::disk('public')->url($this->imagem);
+    }
+
+    /**
+     * Plantas baixas associadas ao empreendimento.
      *
      * @return HasMany
      */
