@@ -30,7 +30,7 @@ class ProfissionalController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $perPage  = (int) $request->integer('per_page', 15);
+        $perPage  = $request->integer('per_page', 15);
         $q        = $request->string('q')->toString();
         $idPerfil = $request->integer('id_perfil') ?: null;
         $status   = $request->integer('status');
@@ -99,31 +99,5 @@ class ProfissionalController extends Controller
         $this->service->delete($prof);
 
         return response()->json([], 204);
-    }
-
-    /**
-     * Lista aniversariantes do mês (?mes=MM).
-     * Considera `dt_nasc` armazenado como 'dd/mm' OU 'YYYY-MM-DD'.
-     */
-    public function birthdays(Request $request): JsonResponse
-    {
-        $mes = $request->string('mes')->toString();
-        if (!preg_match('/^(0[1-9]|1[0-2])$/', $mes)) {
-            $mes = now()->format('m');
-        }
-
-        $items = Profissional::query()
-            ->ativos()
-            ->where('id_perfil', 2) // profissionais
-            ->where(function ($q) use ($mes) {
-                // 'dd/mm' termina com '/MM'
-                $q->where('dt_nasc', 'like', '%/'.$mes)
-                    // 'YYYY-MM-DD': mês é posição 6-7
-                    ->orWhereRaw("substr(dt_nasc, 6, 2) = ?", [$mes]);
-            })
-            ->orderBy('dt_nasc')
-            ->get();
-
-        return response()->json(ProfissionalResource::collection($items));
     }
 }
