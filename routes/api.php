@@ -8,6 +8,7 @@ use App\Http\Controllers\LojaController;
 use App\Http\Controllers\PlantasBaixasController;
 use App\Http\Controllers\PremioController;
 use App\Http\Controllers\BannerController;
+use App\Http\Controllers\ProfissionalController;
 use App\Http\Controllers\RankingController;
 use App\Http\Controllers\RateioController;
 use App\Http\Controllers\UsuarioController;
@@ -80,5 +81,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::apiResource('empreendimentos', EmpreendimentoController::class);
     Route::patch('empreendimentos/{empreendimento}/status', [EmpreendimentoController::class, 'updateStatus']);
+
+    Route::get('/profissionais',        [ProfissionalController::class, 'index']);
+    Route::post('/profissionais',       [ProfissionalController::class, 'store']);
+    Route::get('/profissionais/{id}',   [ProfissionalController::class, 'show']);
+    Route::put('/profissionais/{id}',   [ProfissionalController::class, 'update']);
+    Route::delete('/profissionais/{id}',[ProfissionalController::class, 'destroy']);
+
+    // extras (opcional, cobre telas que você tinha no Zend)
+    Route::get('/profissionais/aniversariantes', [ProfissionalController::class, 'birthdays']);
 
 });
