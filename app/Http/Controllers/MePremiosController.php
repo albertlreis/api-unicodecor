@@ -40,8 +40,8 @@ class MePremiosController extends Controller
             $payload = $this->resolver->resolver(
                 usuarioId: (int) $user->id,
                 dataBase: $request->input('data_base'),
-                incluirProximasFaixas: (bool) $request->boolean('incluir_proximas_faixas', true),
-                incluirProximasCampanhas: (bool) $request->boolean('incluir_proximas_campanhas', true)
+                incluirProximasFaixas: $request->boolean('incluir_proximas_faixas', true),
+                incluirProximasCampanhas: $request->boolean('incluir_proximas_campanhas', true)
             );
 
             return response()->json([

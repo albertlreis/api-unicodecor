@@ -17,7 +17,7 @@ class RankingController extends Controller
 
         $data = $service->getTop100Data($user->id);
 
-        return response()->json(new Top100Resource($data));
+        return response()->json(new Top100Resource((object) $data));
     }
 
     /**

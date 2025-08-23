@@ -2,33 +2,95 @@
 
 namespace App\Services;
 
-use App\Models\Ponto;
 use App\Models\Premio;
-use App\Models\Usuario;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class RankingService
 {
+    /**
+     * Retorna dados para o card do Top100 na Home, calculando
+     * automaticamente o ciclo vigente (01/08 -> 31/07), mesmo
+     * sem registro em `premios`.
+     *
+     * @param  int $userId
+     * @return array{
+     *   colocacao: int|null,
+     *   pontuacao_total: string,
+     *   data_fim_campanha: string,
+     *   dias_restantes: int,
+     *   dt_inicio_iso: string,
+     *   dt_fim_iso: string,
+     *   periodo_label: string
+     * }
+     */
     public function getTop100Data(int $userId): array
     {
-        $row = DB::table('ranking_geral_anual')
-            ->select('colocacao', 'total')
-            ->where('id_profissional', $userId)
+        [$inicio, $fim, $label] = $this->resolverJanelaTop100();
+
+        // Subconsulta base: total de pontos por profissional no ciclo Top100
+        $base = DB::table('usuario as u')
+            ->leftJoin('pontos as p', function ($join) use ($inicio, $fim) {
+                $join->on('p.id_profissional', '=', 'u.id')
+                    ->where('p.status', 1)
+                    ->whereBetween('p.dt_referencia', [$inicio->toDateString(), $fim->toDateString()]);
+            })
+            ->where('u.id_perfil', 2) // perfil Profissional
+            ->groupBy('u.id')
+            ->selectRaw('u.id as id_profissional, COALESCE(SUM(p.valor),0) as total');
+
+        // Ranking por Window Function (MySQL 8+)
+        $ranked = DB::query()
+            ->fromSub($base, 'r')
+            ->selectRaw('r.id_profissional, r.total, RANK() OVER (ORDER BY r.total DESC) as colocacao');
+
+        // Linha do usuário logado
+        $row = DB::query()
+            ->fromSub($ranked, 't')
+            ->where('t.id_profissional', $userId)
             ->first();
 
-        $fimCampanha = Carbon::create(2025, 7, 31);
-        $hoje = now();
-        $diasRestantes = $fimCampanha->isFuture() ? $hoje->diffInDays($fimCampanha) : 0;
+        $total = $row?->total ?? 0.0;
+        $colocacao = $row?->colocacao ?? null;
+
+        $hoje = Carbon::today();
+        $diasRestantes = $fim->isFuture() ? $hoje->diffInDays($fim) : 0;
 
         return [
-            'colocacao' => $row?->colocacao ?? null,
-            'pontuacao_total' => number_format($row?->total ?? 0, 2, ',', '.'),
-            'data_fim_campanha' => $fimCampanha->format('d/m/Y'),
-            'dias_restantes' => $diasRestantes,
+            'colocacao'          => $colocacao ? (int)$colocacao : null,
+            'pontuacao_total'    => number_format((float)$total, 2, ',', '.'),
+            'data_fim_campanha'  => $fim->format('d/m/Y'),
+            'dias_restantes'     => $diasRestantes,
+            // Extras úteis para front
+            'dt_inicio_iso'      => $inicio->toDateString(),
+            'dt_fim_iso'         => $fim->toDateString(),
+            'periodo_label'      => $label, // ex.: "2025/2026"
         ];
+    }
+
+    /**
+     * Determina a janela atual do Top100.
+     * Regra: se mês >= 8 (ago), ciclo = ano atual/ano+1, senão = ano-1/ano.
+     *
+     * @return array{Carbon, Carbon, string} [inicio, fim, label]
+     */
+    private function resolverJanelaTop100(): array
+    {
+        $hoje = Carbon::today();
+        $ano  = $hoje->year;
+
+        if ($hoje->month >= 8) {
+            $inicio = Carbon::create($ano, 8, 1)->startOfDay();      // 01/08/ano
+            $fim    = Carbon::create($ano + 1, 7, 31)->endOfDay();    // 31/07/ano+1
+            $label  = sprintf('%d/%d', $ano, $ano + 1);
+        } else {
+            $inicio = Carbon::create($ano - 1, 8, 1)->startOfDay();   // 01/08/ano-1
+            $fim    = Carbon::create($ano, 7, 31)->endOfDay();        // 31/07/ano
+            $label  = sprintf('%d/%d', $ano - 1, $ano);
+        }
+
+        return [$inicio, $fim, $label];
     }
 
     /**
