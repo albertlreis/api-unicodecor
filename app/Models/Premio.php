@@ -21,6 +21,7 @@ use Carbon\Carbon;
  * @property Carbon|string|null $dt_fim
  * @property Carbon|string|null $dt_cadastro
  * @property int|null $status
+ * @method static findOrFail(mixed $premioId)
  */
 class Premio extends Model
 {
