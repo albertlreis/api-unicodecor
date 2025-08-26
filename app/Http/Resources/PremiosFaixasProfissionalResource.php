@@ -153,6 +153,9 @@ class PremiosFaixasProfissionalResource extends JsonResource
             // Garante chaves obrigatórias mesmo se vierem faltando
             $min = isset($faixa['pontos_min']) ? (int)$faixa['pontos_min'] : 0;
             $max = array_key_exists('pontos_max', $faixa) ? ($faixa['pontos_max'] !== null ? (int)$faixa['pontos_max'] : null) : null;
+            $premioId = isset($faixa['premio_id'])
+                ? (int)$faixa['premio_id']
+                : (isset($faixa['id_premio']) ? (int)$faixa['id_premio'] : 0);
 
             return [
                 'id'                   => (int)$faixa['id'],
@@ -168,12 +171,14 @@ class PremiosFaixasProfissionalResource extends JsonResource
                 'vl_viagem_formatado'  => $faixa['vl_viagem_formatado'] ?? (isset($faixa['vl_viagem']) && $faixa['vl_viagem'] !== null
                         ? number_format((float)$faixa['vl_viagem'], 2, ',', '.')
                         : null),
+                'premio_id'            => $premioId,
             ];
         }
 
         // Caso contrário, assumimos Eloquent Model
         $min = (int)($faixa->pontos_min ?? 0);
         $max = isset($faixa->pontos_max) ? ($faixa->pontos_max !== null ? (int)$faixa->pontos_max : null) : null;
+        $premioId = (int)($faixa->premio_id ?? $faixa->id_premio ?? 0);
 
         return [
             'id'                   => (int)($faixa->id ?? 0),
@@ -189,6 +194,7 @@ class PremiosFaixasProfissionalResource extends JsonResource
             'vl_viagem_formatado'  => isset($faixa->vl_viagem) && $faixa->vl_viagem !== null
                 ? number_format((float)$faixa->vl_viagem, 2, ',', '.')
                 : null,
+            'premio_id'            => $premioId,
         ];
     }
 
