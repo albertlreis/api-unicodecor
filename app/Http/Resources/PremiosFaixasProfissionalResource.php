@@ -9,22 +9,43 @@ use Illuminate\Support\Carbon;
 /**
  * Resource de resposta para /me/premios (visão PROFISSIONAL).
  *
+ * Aceita dados vindo do Service tanto como Eloquent Models quanto como arrays já mapeados.
+ *
  * @phpstan-type ProximaCampanha array{
  *   id:int,
  *   titulo:string|null,
- *   pontos:float|int|null,
- *   pontos_formatado:string|null,
+ *   banner?:string|null,
+ *   regulamento?:string|null,
+ *   pontos:int,
+ *   pontos_formatado:string,
  *   faltam:int,
  *   faltam_formatado:string
  * }
- * @phpstan-type Input array{
- *   pontuacao_total: float|int,
- *   dias_restantes: int,
- *   campanha: \App\Models\Premio|null,
- *   faixa_atual: \App\Models\PremioFaixa|null,
- *   proxima_faixa: \App\Models\PremioFaixa|null,
- *   proximas_faixas: array<int, array<string,mixed>>,
- *   proximas_campanhas: array<int, ProximaCampanha>
+ *
+ * @phpstan-type FaixaOut array{
+ *   id:int,
+ *   descricao:string|null,
+ *   pontos_min:int,
+ *   pontos_min_formatado:string,
+ *   pontos_max:int|null,
+ *   pontos_max_formatado:string|null,
+ *   pontos_range:string,
+ *   acompanhante:bool,
+ *   acompanhante_texto:string,
+ *   vl_viagem:float|null,
+ *   vl_viagem_formatado:string|null
+ * }
+ *
+ * @phpstan-type CampanhaOut array{
+ *   id:int,
+ *   titulo:string|null,
+ *   banner:string|null,
+ *   regulamento:string|null,
+ *   dt_inicio_iso:string|null,
+ *   dt_fim_iso:string|null,
+ *   dt_inicio:string|null,
+ *   dt_fim:string|null,
+ *   periodo:string|null
  * }
  *
  * @property-read array $resource
@@ -43,16 +64,13 @@ class PremiosFaixasProfissionalResource extends JsonResource
          *   campanha: mixed,
          *   faixa_atual: mixed,
          *   proxima_faixa: mixed,
-         *   proximas_faixas?: array<int, array<string,mixed>>,
-         *   proximas_campanhas?: array<int, array<string,mixed>>
+         *   proximas_faixas?: array<int, mixed>,
+         *   proximas_campanhas?: array<int, ProximaCampanha>
          * } $data
          */
         $data = $this->resource;
 
         $pontuacaoTotal = (float) ($data['pontuacao_total'] ?? 0);
-        $campanha       = $data['campanha'] ?? null;
-        $faixaAtual     = $data['faixa_atual'] ?? null;
-        $proximaFaixa   = $data['proxima_faixa'] ?? null;
 
         return [
             // Pontuação do profissional
@@ -62,61 +80,115 @@ class PremiosFaixasProfissionalResource extends JsonResource
             // Progresso
             'dias_restantes'            => (int)($data['dias_restantes'] ?? 0),
 
-            // Campanha atual (quando houver)
-            'campanha' => $campanha ? [
-                'id'               => $campanha->id,
-                'titulo'           => $campanha->titulo,
-                'banner'           => $campanha->banner,
-                'regulamento'      => $campanha->regulamento,
-                // Datas ISO + BR
-                'dt_inicio_iso'    => self::toIso($campanha->dt_inicio),
-                'dt_fim_iso'       => self::toIso($campanha->dt_fim),
-                'dt_inicio'        => self::brDate($campanha->dt_inicio),
-                'dt_fim'           => self::brDate($campanha->dt_fim),
-                'periodo'          => self::periodo($campanha->dt_inicio, $campanha->dt_fim),
-            ] : null,
+            // Campanha atual
+            'campanha'                  => $this->normalizeCampanha($data['campanha'] ?? null),
 
-            // Faixa atual (quando houver)
-            'faixa_atual' => $faixaAtual ? [
-                'id'                   => $faixaAtual->id,
-                'descricao'            => $faixaAtual->descricao,
-                'pontos_min'           => (float) $faixaAtual->pontos_min,
-                'pontos_min_formatado' => number_format((float)$faixaAtual->pontos_min, 0, ',', '.'),
-                'pontos_max'           => self::toNullableFloat($faixaAtual->pontos_max),
-                'pontos_max_formatado' => $faixaAtual->pontos_max !== null
-                    ? number_format((float)$faixaAtual->pontos_max, 0, ',', '.')
-                    : null,
-                'pontos_range'         => self::rangeText($faixaAtual->pontos_min, $faixaAtual->pontos_max),
-                'acompanhante'         => (bool) $faixaAtual->acompanhante,
-                'acompanhante_texto'   => $faixaAtual->acompanhante ? 'Com acompanhante' : 'Somente profissional',
-                'vl_viagem'            => self::toNullableFloat($faixaAtual->vl_viagem),
-                'vl_viagem_formatado'  => $faixaAtual->vl_viagem !== null
-                    ? number_format((float)$faixaAtual->vl_viagem, 2, ',', '.')
-                    : null,
-            ] : null,
+            // Faixa atual
+            'faixa_atual'               => $this->normalizeFaixa($data['faixa_atual'] ?? null),
 
-            // Próxima faixa (quando houver)
-            'proxima_faixa' => $proximaFaixa ? [
-                'id'                   => $proximaFaixa->id,
-                'descricao'            => $proximaFaixa->descricao,
-                'pontos_min'           => (float) $proximaFaixa->pontos_min,
-                'pontos_min_formatado' => number_format((float)$proximaFaixa->pontos_min, 0, ',', '.'),
-                'pontos_max'           => self::toNullableFloat($proximaFaixa->pontos_max),
-                'pontos_max_formatado' => $proximaFaixa->pontos_max !== null
-                    ? number_format((float)$proximaFaixa->pontos_max, 0, ',', '.')
-                    : null,
-                'pontos_range'         => self::rangeText($proximaFaixa->pontos_min, $proximaFaixa->pontos_max),
-                'acompanhante'         => (bool) $proximaFaixa->acompanhante,
-                'acompanhante_texto'   => $proximaFaixa->acompanhante ? 'Com acompanhante' : 'Somente profissional',
-                'vl_viagem'            => self::toNullableFloat($proximaFaixa->vl_viagem),
-                'vl_viagem_formatado'  => $proximaFaixa->vl_viagem !== null
-                    ? number_format((float)$proximaFaixa->vl_viagem, 2, ',', '.')
-                    : null,
-            ] : null,
+            // Próxima faixa
+            'proxima_faixa'             => $this->normalizeFaixa($data['proxima_faixa'] ?? null),
 
-            // Listas auxiliares (já com valores formatados vindos do Service)
-            'proximas_faixas'    => array_values($data['proximas_faixas'] ?? []),
-            'proximas_campanhas' => array_values($data['proximas_campanhas'] ?? []),
+            // Listas (já vêm formatadas pelo Service; apenas garantimos array numérico)
+            'proximas_faixas'           => array_values($data['proximas_faixas'] ?? []),
+
+            // proximas_campanhas devem ser campanhas únicas (não faixas)
+            'proximas_campanhas'        => array_values($data['proximas_campanhas'] ?? []),
+        ];
+    }
+
+    /**
+     * Normaliza campanha vinda como Eloquent Model ou Array.
+     * @param mixed $campanha
+     * @return CampanhaOut|null
+     */
+    private function normalizeCampanha($campanha): ?array
+    {
+        if (!$campanha) {
+            return null;
+        }
+
+        // Se já veio mapeada pelo Service, preserve
+        if (is_array($campanha) && isset($campanha['id'])) {
+            return [
+                'id'            => (int)($campanha['id'] ?? 0),
+                'titulo'        => $campanha['titulo'] ?? null,
+                'banner'        => $campanha['banner'] ?? null,
+                'regulamento'   => $campanha['regulamento'] ?? null,
+                'dt_inicio_iso' => $campanha['dt_inicio_iso'] ?? $this->toIso($campanha['dt_inicio_iso'] ?? null),
+                'dt_fim_iso'    => $campanha['dt_fim_iso'] ?? $this->toIso($campanha['dt_fim_iso'] ?? null),
+                'dt_inicio'     => $campanha['dt_inicio'] ?? null,
+                'dt_fim'        => $campanha['dt_fim'] ?? null,
+                'periodo'       => $campanha['periodo'] ?? null,
+            ];
+        }
+
+        // Caso contrário, assumimos Eloquent Model
+        return [
+            'id'            => (int)($campanha->id ?? 0),
+            'titulo'        => $campanha->titulo ?? null,
+            'banner'        => $campanha->banner ?? null,
+            'regulamento'   => $campanha->regulamento ?? null,
+            'dt_inicio_iso' => self::toIso($campanha->dt_inicio ?? null),
+            'dt_fim_iso'    => self::toIso($campanha->dt_fim ?? null),
+            'dt_inicio'     => self::brDate($campanha->dt_inicio ?? null),
+            'dt_fim'        => self::brDate($campanha->dt_fim ?? null),
+            'periodo'       => self::periodo($campanha->dt_inicio ?? null, $campanha->dt_fim ?? null),
+        ];
+    }
+
+    /**
+     * Normaliza faixa vinda como Eloquent Model ou Array.
+     * @param mixed $faixa
+     * @return FaixaOut|null
+     */
+    private function normalizeFaixa($faixa): ?array
+    {
+        if (!$faixa) {
+            return null;
+        }
+
+        // Se já veio mapeada pelo Service, preserve
+        if (is_array($faixa) && isset($faixa['id'])) {
+            // Garante chaves obrigatórias mesmo se vierem faltando
+            $min = isset($faixa['pontos_min']) ? (int)$faixa['pontos_min'] : 0;
+            $max = array_key_exists('pontos_max', $faixa) ? ($faixa['pontos_max'] !== null ? (int)$faixa['pontos_max'] : null) : null;
+
+            return [
+                'id'                   => (int)$faixa['id'],
+                'descricao'            => $faixa['descricao'] ?? null,
+                'pontos_min'           => $min,
+                'pontos_min_formatado' => $faixa['pontos_min_formatado'] ?? number_format($min, 0, ',', '.'),
+                'pontos_max'           => $max,
+                'pontos_max_formatado' => $faixa['pontos_max_formatado'] ?? ($max !== null ? number_format($max, 0, ',', '.') : null),
+                'pontos_range'         => $faixa['pontos_range'] ?? self::rangeText($min, $max),
+                'acompanhante'         => (bool)($faixa['acompanhante'] ?? false),
+                'acompanhante_texto'   => $faixa['acompanhante_texto'] ?? ((bool)($faixa['acompanhante'] ?? false) ? 'Com acompanhante' : 'Somente profissional'),
+                'vl_viagem'            => isset($faixa['vl_viagem']) ? ($faixa['vl_viagem'] !== null ? (float)$faixa['vl_viagem'] : null) : null,
+                'vl_viagem_formatado'  => $faixa['vl_viagem_formatado'] ?? (isset($faixa['vl_viagem']) && $faixa['vl_viagem'] !== null
+                        ? number_format((float)$faixa['vl_viagem'], 2, ',', '.')
+                        : null),
+            ];
+        }
+
+        // Caso contrário, assumimos Eloquent Model
+        $min = (int)($faixa->pontos_min ?? 0);
+        $max = isset($faixa->pontos_max) ? ($faixa->pontos_max !== null ? (int)$faixa->pontos_max : null) : null;
+
+        return [
+            'id'                   => (int)($faixa->id ?? 0),
+            'descricao'            => $faixa->descricao ?? null,
+            'pontos_min'           => $min,
+            'pontos_min_formatado' => number_format($min, 0, ',', '.'),
+            'pontos_max'           => $max,
+            'pontos_max_formatado' => $max !== null ? number_format($max, 0, ',', '.') : null,
+            'pontos_range'         => self::rangeText($min, $max),
+            'acompanhante'         => (bool)($faixa->acompanhante ?? false),
+            'acompanhante_texto'   => (bool)($faixa->acompanhante ?? false) ? 'Com acompanhante' : 'Somente profissional',
+            'vl_viagem'            => isset($faixa->vl_viagem) ? ($faixa->vl_viagem !== null ? (float)$faixa->vl_viagem : null) : null,
+            'vl_viagem_formatado'  => isset($faixa->vl_viagem) && $faixa->vl_viagem !== null
+                ? number_format((float)$faixa->vl_viagem, 2, ',', '.')
+                : null,
         ];
     }
 
