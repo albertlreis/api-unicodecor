@@ -30,12 +30,14 @@ final class PontuacaoFiltro
         public readonly ?int $loja_id = null,
         public readonly ?int $cliente_id = null,
         public readonly ?int $profissional_id = null,
-        public readonly ?string $order_by = 'dt_referencia',
+        public readonly ?string $order_by = 'dt_cadastro',
         public readonly ?string $order_dir = 'desc',
         public readonly int $per_page = 10,
     ) {}
 
-    /** @param array<string,mixed> $data */
+    /**
+     * @param array<string,mixed> $data
+     */
     public static function fromArray(array $data): self
     {
         return new self(
@@ -48,7 +50,7 @@ final class PontuacaoFiltro
             loja_id: isset($data['loja_id']) ? (int) $data['loja_id'] : null,
             cliente_id: isset($data['cliente_id']) ? (int) $data['cliente_id'] : null,
             profissional_id: isset($data['profissional_id']) ? (int) $data['profissional_id'] : null,
-            order_by: $data['order_by'] ?? 'dt_referencia',
+            order_by: $data['order_by'] ?? 'dt_cadastro',
             order_dir: $data['order_dir'] ?? 'desc',
             per_page: isset($data['per_page']) ? (int) $data['per_page'] : 10,
         );

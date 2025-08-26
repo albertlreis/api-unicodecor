@@ -9,8 +9,61 @@ use App\Models\Premio;
 use App\Support\BRNumber;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
+/**
+ * Repositório Eloquent para Pontos.
+ */
 class EloquentPontoRepository implements PontoRepository
 {
+    /**
+     * Mapeia/valida ordenação vinda do filtro para evitar SQL injection e quebras.
+     *
+     * Regras:
+     * - Colunas permitidas: id, dt_referencia, valor, dt_cadastro, dt_edicao.
+     * - Direção permitida: asc | desc (default: desc).
+     * - Aceita prefixo "-coluna" para direção desc quando order_dir não vier.
+     * - Fallback: dt_cadastro desc.
+     *
+     * @param  string|null $by  Valor recebido (ex.: 'dt_cadastro', '-valor', etc.)
+     * @param  string|null $dir Direção recebida ('asc' | 'desc' | null)
+     * @return array{0:string,1:string} [ colunaSegura, direcaoSegura ]
+     */
+    private function resolveOrder(?string $by, ?string $dir): array
+    {
+        $allowed = [
+            'id'             => 'id',
+            'dt_referencia'  => 'dt_referencia',
+            'valor'          => 'valor',
+            'dt_cadastro'    => 'dt_cadastro',
+            'dt_edicao'      => 'dt_edicao',
+        ];
+
+        $direction = strtolower((string) $dir);
+        $direction = $direction === 'asc' ? 'asc' : ($direction === 'desc' ? 'desc' : null);
+
+        $column = $by ? trim(strtolower($by)) : '';
+
+        // Suporte a prefixo "-coluna" => desc
+        if ($column !== '' && str_starts_with($column, '-')) {
+            $column = ltrim($column, '-');
+            $direction = $direction ?? 'desc';
+        }
+
+        // Resolve coluna segura + fallbacks
+        $safeColumn = $allowed[$column] ?? 'dt_cadastro';
+        $direction  = $direction ?? 'desc';
+
+        return [$safeColumn, $direction];
+    }
+
+    /**
+     * Busca paginada de pontuações com filtros por perfil e ordenação segura.
+     *
+     * @param  PontuacaoFiltro $filtro
+     * @param  int             $perfilId
+     * @param  int             $usuarioId
+     * @param  int|null        $usuarioLojaId
+     * @return LengthAwarePaginator
+     */
     public function buscarPaginado(
         PontuacaoFiltro $filtro,
         int $perfilId,
@@ -38,9 +91,8 @@ class EloquentPontoRepository implements PontoRepository
         }
 
         // ---------- Filtros ----------
-        // valor (exato) e/ou faixa de valor
         if (!empty($filtro->valor)) {
-            $valor = BRNumber::parseDecimal($filtro->valor); // ex.: "1.234,56" -> 1234.56
+            $valor = BRNumber::parseDecimal($filtro->valor);
             $q->where('valor', $valor);
         }
 
@@ -50,7 +102,6 @@ class EloquentPontoRepository implements PontoRepository
             $q->whereBetween('valor', [$min, $max]);
         }
 
-        // faixa de datas
         if (!empty($filtro->dt_inicio) && !empty($filtro->dt_fim)) {
             $q->whereBetween('dt_referencia', [$filtro->dt_inicio, $filtro->dt_fim]);
         } elseif (!empty($filtro->dt_inicio)) {
@@ -59,9 +110,11 @@ class EloquentPontoRepository implements PontoRepository
             $q->where('dt_referencia', '<=', $filtro->dt_fim);
         }
 
-        // filtra por campanha (premio): mapeia para intervalo de datas
         if (!empty($filtro->premio_id)) {
-            $premio = Premio::query()->select(['dt_inicio', 'dt_fim'])->find($filtro->premio_id);
+            $premio = Premio::query()
+                ->select(['dt_inicio', 'dt_fim'])
+                ->find($filtro->premio_id);
+
             if ($premio) {
                 $q->whereBetween('dt_referencia', [$premio->dt_inicio, $premio->dt_fim]);
             }
@@ -71,14 +124,26 @@ class EloquentPontoRepository implements PontoRepository
         if (!empty($filtro->cliente_id)) { $q->where('id_cliente', $filtro->cliente_id); }
 
         // ---------- Ordenação segura ----------
-        $orderBy  = in_array($filtro->order_by, ['dt_referencia', 'valor', 'id'], true) ? $filtro->order_by : 'dt_referencia';
-        $orderDir = in_array($filtro->order_dir, ['asc', 'desc'], true) ? $filtro->order_dir : 'desc';
+        [$orderBy, $orderDir] = $this->resolveOrder($filtro->order_by, $filtro->order_dir);
+
+        // Nulls por último quando ordenar por dt_cadastro
+        if ($orderBy === 'dt_cadastro') {
+            // Em MySQL, FALSE(0)=não-nulo vem antes de TRUE(1)=nulo, mantendo nulos por último
+            $q->orderByRaw('dt_cadastro IS NULL');
+        }
 
         $q->with(['profissional', 'loja', 'lojista', 'cliente'])
-            ->orderBy($orderBy, $orderDir)
-            ->orderBy('id', 'desc'); // estabiliza ordenação
+            ->orderBy($orderBy, $orderDir);
 
-        // ---------- Paginação ----------
-        return $q->paginate($filtro->per_page)->withQueryString();
+        // Tiebreaker para estabilidade
+        if ($orderBy !== 'id') {
+            $q->orderBy('id', 'desc');
+        }
+
+        // ---------- Paginação (limites seguros) ----------
+        $perPage = $filtro->per_page ?: 10;
+        $perPage = max(1, min(100, $perPage));
+
+        return $q->paginate($perPage)->withQueryString();
     }
 }
