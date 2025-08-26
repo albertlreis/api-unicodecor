@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class PlantasBaixasService
 {
+    public const STORAGE_DIR = 'uploads/plantas-baixas';
+
     /** @return array<int, array<string,mixed>> */
     public function listarAgrupado(): array
     {
@@ -108,19 +110,24 @@ class PlantasBaixasService
         $planta->delete();
     }
 
-    /** @internal Armazena PDF no disco "public" em uploads/plantas-baixas/YYYY/MM */
+    /** @internal Armazena PDF no disco "public" */
     private function armazenarPdf(UploadedFile $arquivo): string
     {
-        $dir = 'uploads/plantas-baixas/'.date('Y/m');
-        // mantém nome único preservando extensão
-        return $arquivo->storePublicly($dir, ['disk' => 'public']);
+        $nomeUnico = uniqid().'_'.preg_replace('/\s+/', '_', $arquivo->getClientOriginalName());
+        $arquivo->storeAs(self::STORAGE_DIR, $nomeUnico, ['disk' => 'public']);
+
+        // salva somente o nome
+        return $nomeUnico;
     }
 
     /** @internal Apaga arquivo antigo, se existir */
-    private function apagarArquivoSeExistir(?string $path): void
+    private function apagarArquivoSeExistir(?string $nomeArquivo): void
     {
-        if ($path && Storage::disk('public')->exists($path)) {
-            Storage::disk('public')->delete($path);
+        if ($nomeArquivo) {
+            $path = self::STORAGE_DIR.'/'.$nomeArquivo;
+            if (Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
         }
     }
 }

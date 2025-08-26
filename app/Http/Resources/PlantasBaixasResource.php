@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Services\PlantasBaixasService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Storage;
@@ -23,9 +24,9 @@ class PlantasBaixasResource extends JsonResource
                     'id_empreendimento' => $emp['id_empreendimento'],
                     'nome'               => $emp['nome'],
                     'imagem'             => $emp['imagem'],
-                    'plantas'            => collect($emp['plantas'])->map(function ($planta) {
+                    'plantas' => collect($emp['plantas'])->map(function ($planta) {
                         $publicUrl = $planta['arquivo']
-                            ? Storage::disk('public')->url($planta['arquivo'])
+                            ? Storage::disk('public')->url(PlantasBaixasService::STORAGE_DIR.'/'.$planta['arquivo'])
                             : null;
 
                         return [
