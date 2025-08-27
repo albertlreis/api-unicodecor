@@ -6,6 +6,7 @@ use App\Http\Controllers\MePremiosController;
 use App\Http\Controllers\GaleriaController;
 use App\Http\Controllers\LojaController;
 use App\Http\Controllers\PlantasBaixasController;
+use App\Http\Controllers\PontuacaoOpcoesController;
 use App\Http\Controllers\PremioController;
 use App\Http\Controllers\BannerController;
 use App\Http\Controllers\ProfissionalController;
@@ -27,6 +28,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Pontuações
     Route::get('/pontuacoes', [PontuacaoController::class, 'index']);
     Route::post('/pontuacoes', [PontuacaoController::class, 'store']);
+    Route::get('/pontuacoes/opcoes', [PontuacaoOpcoesController::class, 'index']);
 
     Route::get('/premios', [PremioController::class, 'index']);
 
