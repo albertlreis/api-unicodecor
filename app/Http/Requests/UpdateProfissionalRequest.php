@@ -7,12 +7,8 @@ use Illuminate\Validation\Rule;
 
 /**
  * Validação para atualização de Profissional.
- * Regras:
- * - CPF obrigatório, somente dígitos, 11 caracteres, DV válido.
- * - Nome com trim + UPPERCASE.
- * - Login somente letras minúsculas (a-z), sem espaços; único (ignora o próprio id).
- * - id_perfil forçado para 2.
- * - Senha opcional (quando enviada, min 6).
+ *
+ * @phpstan-type Rules array<string, mixed>
  */
 class UpdateProfissionalRequest extends FormRequest
 {
@@ -35,9 +31,7 @@ class UpdateProfissionalRequest extends FormRequest
         ]);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** @return Rules */
     public function rules(): array
     {
         $id = (int) $this->route('id');
@@ -46,7 +40,14 @@ class UpdateProfissionalRequest extends FormRequest
             'id_perfil'    => ['required', 'integer', 'in:2'],
             'id_loja'      => ['nullable', 'integer'],
             'nome'         => ['required', 'string', 'min:2', 'max:100'],
-            'cpf'          => ['required', 'string', 'regex:/^\d{11}$/'], // DV checado em withValidator
+            'cpf'          => [
+                'required',
+                'string',
+                'regex:/^\d{11}$/',
+                // ✅ único ignorando o próprio registro
+                Rule::unique('usuario', 'cpf')->ignore($id, 'id'),
+            ],
+            'email'        => ['required', 'email', 'max:100'],
             'profissao'    => ['nullable', 'string', 'max:200'],
             'area_atuacao' => ['nullable', 'string', 'max:50'],
             'endereco'     => ['nullable', 'string', 'max:500'],
@@ -56,7 +57,6 @@ class UpdateProfissionalRequest extends FormRequest
             'id_estado'    => ['nullable', 'integer'],
             'id_cidade'    => ['nullable', 'integer'],
             'site'         => ['nullable', 'string', 'max:100'],
-            'email'        => ['nullable', 'email', 'max:100'],
             'fone'         => ['nullable', 'string', 'max:20'],
             'fax'          => ['nullable', 'string', 'max:20'],
             'cel'          => ['nullable', 'string', 'max:20'],
@@ -64,7 +64,6 @@ class UpdateProfissionalRequest extends FormRequest
             'reg_crea'     => ['nullable', 'string', 'max:30'],
             'reg_abd'      => ['nullable', 'string', 'max:30'],
 
-            // Login: único (ignora o próprio registro) + apenas letras minúsculas
             'login'        => [
                 'required',
                 'string',
@@ -73,9 +72,7 @@ class UpdateProfissionalRequest extends FormRequest
                 Rule::unique('usuario', 'login')->ignore($id, 'id'),
             ],
 
-            // Senha opcional; quando enviada, respeita min 6.
             'senha'        => ['nullable', 'string', 'min:6', 'max:255'],
-
             'acesso'       => ['nullable', 'integer'],
             'status'       => ['nullable', 'integer', 'in:0,1,2'],
         ];
@@ -112,12 +109,16 @@ class UpdateProfissionalRequest extends FormRequest
         return $dv1 === intval($cpf[9]) && $dv2 === intval($cpf[10]);
     }
 
+    /** @return array<string,string> */
     public function messages(): array
     {
         return [
             'id_perfil.in'   => 'Perfil inválido.',
             'cpf.required'   => 'CPF é obrigatório.',
             'cpf.regex'      => 'CPF deve conter exatamente 11 dígitos.',
+            'cpf.unique'     => 'Já existe um usuário com esse CPF.',
+            'email.required' => 'E-mail é obrigatório.',
+            'email.email'    => 'E-mail inválido.',
             'login.unique'   => 'Já existe um usuário com esse login.',
             'senha.min'      => 'A senha deve ter ao menos 6 caracteres.',
         ];

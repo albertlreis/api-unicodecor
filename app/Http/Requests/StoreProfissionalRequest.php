@@ -7,11 +7,8 @@ use Illuminate\Validation\Rule;
 
 /**
  * Validação para criação de Profissional.
- * Regras:
- * - CPF obrigatório, somente dígitos, 11 caracteres, DV válido.
- * - Nome com trim + UPPERCASE (normalizado antes de validar).
- * - Login somente letras minúsculas (a-z), sem espaços, único.
- * - id_perfil forçado para 2 (Profissional).
+ *
+ * @phpstan-type Rules array<string, mixed>
  */
 class StoreProfissionalRequest extends FormRequest
 {
@@ -20,13 +17,6 @@ class StoreProfissionalRequest extends FormRequest
         return true;
     }
 
-    /**
-     * Normaliza os campos antes da validação:
-     * - cpf: somente dígitos
-     * - nome: trim + UPPERCASE
-     * - login: apenas letras minúsculas a-z
-     * - id_perfil: força 2
-     */
     protected function prepareForValidation(): void
     {
         $cpf   = preg_replace('/\D+/', '', (string) $this->input('cpf', ''));
@@ -41,16 +31,21 @@ class StoreProfissionalRequest extends FormRequest
         ]);
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** @return Rules */
     public function rules(): array
     {
         return [
             'id_perfil'    => ['required', 'integer', 'in:2'],
             'id_loja'      => ['nullable', 'integer'],
             'nome'         => ['required', 'string', 'min:2', 'max:100'],
-            'cpf'          => ['required', 'string', 'regex:/^\d{11}$/'], // DV checado em withValidator
+            'cpf'          => [
+                'required',
+                'string',
+                'regex:/^\d{11}$/',
+                // ✅ CPF único na tabela usuario
+                Rule::unique('usuario', 'cpf'),
+            ],
+            'email'        => ['required', 'email', 'max:100'],
             'profissao'    => ['nullable', 'string', 'max:200'],
             'area_atuacao' => ['nullable', 'string', 'max:50'],
             'endereco'     => ['nullable', 'string', 'max:500'],
@@ -60,7 +55,6 @@ class StoreProfissionalRequest extends FormRequest
             'id_estado'    => ['nullable', 'integer'],
             'id_cidade'    => ['nullable', 'integer'],
             'site'         => ['nullable', 'string', 'max:100'],
-            'email'        => ['nullable', 'email', 'max:100'],
             'fone'         => ['nullable', 'string', 'max:20'],
             'fax'          => ['nullable', 'string', 'max:20'],
             'cel'          => ['nullable', 'string', 'max:20'],
@@ -68,7 +62,6 @@ class StoreProfissionalRequest extends FormRequest
             'reg_crea'     => ['nullable', 'string', 'max:30'],
             'reg_abd'      => ['nullable', 'string', 'max:30'],
 
-            // Login: único + apenas letras minúsculas
             'login'        => [
                 'required',
                 'string',
@@ -77,7 +70,6 @@ class StoreProfissionalRequest extends FormRequest
                 Rule::unique('usuario', 'login'),
             ],
 
-            // Senha obrigatória na criação
             'senha'        => ['required', 'string', 'min:6', 'max:255'],
 
             'acesso'       => ['nullable', 'integer'],
@@ -85,9 +77,6 @@ class StoreProfissionalRequest extends FormRequest
         ];
     }
 
-    /**
-     * Validação adicional do CPF (dígitos verificadores).
-     */
     public function withValidator($validator): void
     {
         $validator->after(function ($v) {
@@ -98,9 +87,6 @@ class StoreProfissionalRequest extends FormRequest
         });
     }
 
-    /**
-     * Verifica os dígitos verificadores do CPF.
-     */
     private function cpfValido(string $raw): bool
     {
         $cpf = preg_replace('/\D+/', '', $raw);
@@ -122,19 +108,18 @@ class StoreProfissionalRequest extends FormRequest
         return $dv1 === intval($cpf[9]) && $dv2 === intval($cpf[10]);
     }
 
-    /**
-     * Mensagens customizadas.
-     *
-     * @return array<string,string>
-     */
+    /** @return array<string,string> */
     public function messages(): array
     {
         return [
-            'id_perfil.in'     => 'Perfil inválido.',
-            'cpf.required'     => 'CPF é obrigatório.',
-            'cpf.regex'        => 'CPF deve conter exatamente 11 dígitos.',
-            'login.unique'     => 'Já existe um usuário com esse login.',
-            'senha.required'   => 'Senha é obrigatória.',
+            'id_perfil.in'   => 'Perfil inválido.',
+            'cpf.required'   => 'CPF é obrigatório.',
+            'cpf.regex'      => 'CPF deve conter exatamente 11 dígitos.',
+            'cpf.unique'     => 'Já existe um usuário com esse CPF.',
+            'email.required' => 'E-mail é obrigatório.',
+            'email.email'    => 'E-mail inválido.',
+            'login.unique'   => 'Já existe um usuário com esse login.',
+            'senha.required' => 'Senha é obrigatória.',
         ];
     }
 }
