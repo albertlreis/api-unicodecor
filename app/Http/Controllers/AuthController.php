@@ -14,12 +14,13 @@ class AuthController extends Controller
      */
     public function login(Request $request): JsonResponse
     {
-        $request->validate([
+        $validated = $request->validate([
             'login' => 'required|string',
             'senha' => 'required|string',
         ]);
 
-        $usuario = Usuario::where('login', $request->login)
+        $usuario = Usuario::with('loja')
+            ->where('login', $validated['login'])
             ->where('status', 1)
             ->first();
 

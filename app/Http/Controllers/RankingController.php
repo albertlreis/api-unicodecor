@@ -55,4 +55,24 @@ class RankingController extends Controller
 
         return response()->json($response);
     }
+
+    /**
+     * GET /ranking/premios
+     * Retorna apenas para a tela de ranking:
+     * - Prêmios ATIVOS do banco
+     * - + 2 prêmios virtuais "Top 100" (atual e próximo)
+     *
+     * @return JsonResponse
+     */
+    public function premiosOptions(): JsonResponse
+    {
+        $svc = new RankingService();
+        $ativos = $svc->listarPremiosAtivosBase();       // só banco
+        [$t100Atual, $t100Prox] = $svc->buildTop100VirtualPrizes(); // só ranking
+
+        // Mescla, sem alterar /premios global
+        $items = array_values(array_merge($ativos, [$t100Atual, $t100Prox]));
+
+        return response()->json(['data' => $items]);
+    }
 }

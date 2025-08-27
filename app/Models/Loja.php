@@ -63,7 +63,7 @@ class Loja extends Model
     /** Escopo: apenas ativas (status=1). */
     public function scopeAtivas(Builder $q): Builder
     {
-        return $q->where('status', 1);
+        return $q->where('status', 1)->orderBy('nome');
     }
 
     /** Mutator CNPJ tolerante a null; mantém máscara padrão se possível. */

@@ -61,6 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/usuarios/administrativos', [UsuarioController::class, 'administrativos']);
     Route::get('/usuarios/aniversariantes', [UsuarioController::class, 'aniversariantes']);
 
+    Route::get('/ranking/premios', [RankingController::class, 'premiosOptions']);
     Route::get('/ranking/top100', [RankingController::class, 'top100']);
     Route::get('/ranking/geral', [RankingController::class, 'index']);
     Route::get('/ranking/detalhado', [RankingController::class, 'detalhado']);

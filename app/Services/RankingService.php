@@ -131,6 +131,71 @@ class RankingService
     }
 
     /**
+     * Retorna o ranking geral com base no prêmio (obrigatório), com filtro opcional por loja.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return array{
+     *   premio: array{id:int,titulo:string,dt_inicio:string,dt_fim:string,pontos:float|int},
+     *   dados: array<int, object>
+     * }
+     */
+    public function listar(Request $request): array
+    {
+        $idPremio = $request->input('id_premio'); // int OU "top100:YYYY"
+        $lojaId   = $request->filled('id_loja') ? (int) $request->input('id_loja') : null;
+
+        // Caso especial: prêmio virtual Top 100
+        if (is_string($idPremio) && preg_match('/^top100:(\d{4})$/', $idPremio, $m)) {
+            $ano = (int) $m[1];
+            $dtInicio = Carbon::create($ano, 8)->toDateString();
+            $dtFim    = Carbon::create($ano + 1, 7, 31)->toDateString();
+
+            $dados = DB::select('CALL sp_ranking_top100_periodo(?, ?, ?)', [$dtInicio, $dtFim, $lojaId]);
+
+            return [
+                'premio' => [
+                    'id'        => "top100:$ano",
+                    'titulo'    => "Top 100 $ano",
+                    'dt_inicio' => $dtInicio,
+                    'dt_fim'    => $dtFim,
+                    'pontos'    => 0,
+                    '_virtual'  => true,
+                    '_tipo'     => 'top100',
+                    '_ano'      => $ano,
+                ],
+                'dados' => $dados,
+            ];
+        }
+
+        // Fluxo normal (prêmio do banco)
+        $premio = Premio::findOrFail((int) $idPremio);
+
+        // "Top100 cadastrado" = sem faixas e pontos > 0
+        $isTop100 = $this->isTop100($premio);
+
+        if ($isTop100) {
+            $dtInicio = $premio->dt_inicio->format('Y-m-d');
+            $dtFim    = $premio->dt_fim->format('Y-m-d');
+            $dados = DB::select('CALL sp_ranking_top100_periodo(?, ?, ?)', [$dtInicio, $dtFim, $lojaId]);
+        } else {
+            $dados = DB::select('CALL sp_ranking_geral_profissionais(?, ?)', [(int) $premio->id, $lojaId]);
+        }
+
+        return [
+            'premio' => [
+                'id'        => $premio->id,
+                'titulo'    => $premio->titulo,
+                'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
+                'dt_fim'    => $premio->dt_fim->format('Y-m-d'),
+                'pontos'    => $premio->pontos,
+            ],
+            'dados' => $dados,
+        ];
+    }
+
+
+
+    /**
      * Retorna o ‘ranking’ detalhado (profissionais que atingiram e que não atingiram).
      *
      * @param  Request $request
@@ -230,4 +295,68 @@ class RankingService
             && is_null(DB::table('premio_faixas')->where('id_premio', $premio->id)->first())
             && $premio->pontos > 0;
     }
+
+    /**
+     * Lista prêmios ATIVOS do banco para uso no ranking (sem virtuais).
+     *
+     * @return array<int, array{id:int,titulo:string,dt_inicio:string,dt_fim:string,pontos:float|int,status:int}>
+     */
+    public function listarPremiosAtivosBase(): array
+    {
+        /** @var \Illuminate\Database\Eloquent\Collection<int, Premio> $list */
+        $list = Premio::query()
+            ->ativosNoDia()
+            ->where('status', 1)
+            ->orderByDesc('dt_inicio')
+            ->get();
+
+        return $list->map(function (Premio $p) {
+            return [
+                'id'        => $p->id,
+                'titulo'    => (string) $p->titulo,
+                'dt_inicio' => $p->dt_inicio->format('Y-m-d'),
+                'dt_fim'    => $p->dt_fim->format('Y-m-d'),
+                'pontos'    => (float) $p->pontos,
+                'status'    => (int) $p->status,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * Gera os 2 prêmios virtuais Top 100 (atual e próximo) — uso exclusivo no ranking.
+     *
+     * Regra:
+     * - Se hoje ∈ [01/08/Y, 31/07/Y+1], retorna (Top 100 Y/Y+1, Top 100 Y+1/Y+2).
+     * - Após 31/07/Y+1, retorna (Top 100 Y+1/Y+2, Top 100 Y+2/Y+3).
+     *
+     * @return array{0: array<string,mixed>, 1: array<string,mixed>}
+     */
+    public function buildTop100VirtualPrizes(): array
+    {
+        $hoje = Carbon::today();
+        $anoBase = $hoje->year - 1;
+
+        $atual = $hoje->month >= 8 ? $anoBase : $anoBase - 1;
+        $proximo = $atual + 1;
+
+        $mk = static function (int $y): array {
+            $inicio = Carbon::create($y, 8)->toDateString();
+            $fim    = Carbon::create($y + 1, 7, 31)->toDateString();
+
+            return [
+                'id'        => "top100:$y",
+                'titulo'    => "Top 100 $y/" . ($y + 1),
+                'dt_inicio' => $inicio,
+                'dt_fim'    => $fim,
+                'pontos'    => 0,
+                'status'    => 1,
+                '_virtual'  => true,
+                '_tipo'     => 'top100',
+                '_ano'      => $y,
+            ];
+        };
+
+        return [$mk($atual), $mk($proximo)];
+    }
+
 }

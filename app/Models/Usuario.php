@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -20,6 +21,16 @@ class Usuario extends Authenticatable
     public function getAuthPassword()
     {
         return $this->senha;
+    }
+
+    /**
+     * Relacionamento: a loja vinculada ao usuário (se houver).
+     *
+     * @return BelongsTo<Loja, Usuario>
+     */
+    public function loja(): BelongsTo
+    {
+        return $this->belongsTo(Loja::class, 'id_loja');
     }
 
     public function scopeVisiveisParaUsuario($query, Usuario $usuario)
