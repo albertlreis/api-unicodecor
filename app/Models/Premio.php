@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
@@ -28,6 +30,9 @@ class Premio extends Model
     protected $table = 'premios';
     public $timestamps = false;
 
+    public const BANNER_DIR      = 'premios/banners';
+    public const REGULAMENTO_DIR = 'premios/regulamentos';
+
     protected $fillable = [
         'titulo',
         'descricao',
@@ -36,7 +41,6 @@ class Premio extends Model
         'site',
         'banner',
         'pontos',
-        'valor_viagem',
         'dt_inicio',
         'dt_fim',
         'dt_cadastro',
@@ -47,8 +51,6 @@ class Premio extends Model
         'dt_inicio'    => 'datetime',
         'dt_fim'       => 'datetime',
         'dt_cadastro'  => 'datetime',
-        'pontos'       => 'float',
-        'valor_viagem' => 'float',
         'status'       => 'integer',
     ];
 
@@ -89,5 +91,49 @@ class Premio extends Model
             ->whereDate('dt_inicio', '<=', $hoje)
             ->whereNotNull('dt_fim')
             ->whereDate('dt_fim', '>=', $hoje);
+    }
+
+    /**
+     * Resolve URL absoluta para um arquivo no disk 'public'.
+     *
+     * - Se $filename já for URL absoluta (http/https), retorna como está;
+     * - Se estiver vazio, retorna null;
+     * - Caso contrário, monta Storage::disk('public')->url("$baseDir/$filename").
+     *
+     * @param  string|null $filename
+     * @param  string      $baseDir
+     * @return string|null
+     */
+    protected function resolvePublicUrl(?string $filename, string $baseDir): ?string
+    {
+        if (empty($filename)) {
+            return null;
+        }
+
+        if (Str::startsWith($filename, ['http://', 'https://'])) {
+            return $filename;
+        }
+
+        return Storage::disk('public')->url(trim($baseDir, '/').'/'.$filename);
+    }
+
+    /**
+     * URL absoluta do banner.
+     *
+     * @return string|null
+     */
+    public function getBannerUrlAttribute(): ?string
+    {
+        return $this->resolvePublicUrl($this->banner, self::BANNER_DIR);
+    }
+
+    /**
+     * URL absoluta do regulamento (PDF).
+     *
+     * @return string|null
+     */
+    public function getRegulamentoUrlAttribute(): ?string
+    {
+        return $this->resolvePublicUrl($this->regulamento, self::REGULAMENTO_DIR);
     }
 }
