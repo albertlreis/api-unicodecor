@@ -120,6 +120,7 @@ class UsuarioController extends Controller
         // Ordenação: dia (SUBSTRING_INDEX(..., '/', 1)) ASC, nome ASC
         $usuarios = Usuario::query()
             ->where('status', 1)
+            ->where('id_perfil', 2)
             ->whereNotNull('dt_nasc')
             ->whereRaw("RIGHT(dt_nasc, 2) = ?", [$monthStr])
             ->orderByRaw("CAST(SUBSTRING_INDEX(dt_nasc, '/', 1) AS UNSIGNED) ASC, nome ASC")
