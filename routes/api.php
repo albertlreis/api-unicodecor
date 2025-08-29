@@ -82,6 +82,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('galerias')->group(function () {
         Route::get('/', [GaleriaController::class, 'index']);
         Route::get('{id}', [GaleriaController::class, 'show']);
+
+        Route::post('/', [GaleriaController::class, 'store']);
+        Route::match(['put', 'patch'], '{id}', [GaleriaController::class, 'update']);
+        Route::delete('{id}', [GaleriaController::class, 'destroy']);
+
+        Route::post('{id}/imagens', [GaleriaController::class, 'storeImagem']); // multipart
+        Route::delete('{id}/imagens/{idImagem}', [GaleriaController::class, 'destroyImagem']);
+        Route::patch('{id}/capa/{idImagem}', [GaleriaController::class, 'definirCapa']);
     });
 
     Route::get('/construtoras', [ConstrutorasController::class, 'index']);

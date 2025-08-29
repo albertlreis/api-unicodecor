@@ -6,6 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
+/**
+ * @property int $idGalerias
+ * @property ?int $idGaleriaImagens
+ * @property ?string $descricao
+ * @property int $status
+ * @property string $dt_criacao
+ */
 class Galeria extends Model
 {
     protected $table = 'galerias';

@@ -5,6 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $idGaleriaImagens
+ * @property int $idGalerias
+ * @property ?string $arquivo
+ * @property ?string $nome
+ * @property ?string $descricao
+ * @property string $dt_criacao
+ * @property int $status
+ */
 class GaleriaImagem extends Model
 {
     protected $table = 'galeria_imagens';
