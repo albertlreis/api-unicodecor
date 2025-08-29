@@ -10,7 +10,6 @@ use App\Models\Empreendimento;
 use App\Models\PlantaBaixa;
 use App\Services\PlantasBaixasService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 /**
  * Controlador responsável pela listagem e CRUD de Plantas Baixas.

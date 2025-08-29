@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\UsuarioAdminStoreRequest;
+use App\Http\Requests\UsuarioAdminUpdateRequest;
+use App\Http\Resources\UsuarioAdminResource;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -11,6 +14,92 @@ use Carbon\Carbon;
 
 class UsuarioController extends Controller
 {
+
+    /**
+     * Cria um usuário administrativo.
+     * - status sempre = 1 (ativo)
+     * - senha salva com md5 para compatibilizar com AuthController atual
+     * - exige id_loja quando perfil = 3 (lojista)
+     *
+     * @param  UsuarioAdminStoreRequest $request
+     * @return JsonResponse
+     */
+    public function store(UsuarioAdminStoreRequest $request): JsonResponse
+    {
+        $dados = $request->validated();
+
+        $usuario = new Usuario();
+        $usuario->nome      = $dados['nome'];
+        $usuario->email     = $dados['email'];
+        $usuario->cpf       = $dados['cpf'];
+        $usuario->id_perfil = (int) $dados['id_perfil'];
+        $usuario->id_loja   = $dados['id_loja'] ?? null;
+        // compatibilidade com login atual:
+        $usuario->senha     = md5($dados['senha']);
+        $usuario->status    = 1; // sempre ativo no cadastro
+        $usuario->login     = $dados['email']; // opcional: usar email como login
+
+        $usuario->save();
+
+        return response()->json([
+            'sucesso' => true,
+            'mensagem'=> 'Usuário criado com sucesso.',
+            'dados'   => new UsuarioAdminResource($usuario),
+        ], 201);
+    }
+
+    /**
+     * Atualiza um usuário administrativo.
+     * - nome, email, cpf, perfil obrigatórios
+     * - senha opcional (se enviada, atualiza)
+     * - id_loja obrigatório quando perfil = 3
+     *
+     * @param  UsuarioAdminUpdateRequest $request
+     * @param  Usuario                   $usuario
+     * @return JsonResponse
+     */
+    public function update(UsuarioAdminUpdateRequest $request, Usuario $usuario): JsonResponse
+    {
+        $dados = $request->validated();
+
+        $usuario->nome      = $dados['nome'];
+        $usuario->email     = $dados['email'];
+        $usuario->cpf       = $dados['cpf'];
+        $usuario->id_perfil = (int) $dados['id_perfil'];
+        $usuario->id_loja   = $dados['id_loja'] ?? null;
+
+        if (!empty($dados['senha'])) {
+            // compatibilidade com AuthController
+            $usuario->senha = md5($dados['senha']);
+        }
+
+        $usuario->save();
+
+        return response()->json([
+            'sucesso' => true,
+            'mensagem'=> 'Usuário atualizado com sucesso.',
+            'dados'   => new UsuarioAdminResource($usuario),
+        ]);
+    }
+
+    /**
+     * "Exclusão" lógica: apenas inativa o usuário.
+     * - status = 0
+     *
+     * @param  Usuario $usuario
+     * @return JsonResponse
+     */
+    public function destroy(Usuario $usuario): JsonResponse
+    {
+        $usuario->status = 0;
+        $usuario->save();
+
+        return response()->json([
+            'sucesso' => true,
+            'mensagem'=> 'Usuário inativado com sucesso.',
+        ]);
+    }
+
     /**
      * Retorna lista de clientes (usuários com perfil_id = 6).
      *

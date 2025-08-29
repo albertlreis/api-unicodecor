@@ -59,6 +59,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/usuarios', [UsuarioController::class, 'usuarios']);
     Route::get('/usuarios/administrativos', [UsuarioController::class, 'administrativos']);
+    Route::post('/usuarios/administrativos', [UsuarioController::class, 'store']);
+    Route::match(['put','patch'], '/usuarios/administrativos/{usuario}', [UsuarioController::class, 'update']);
+    Route::delete('/usuarios/administrativos/{usuario}', [UsuarioController::class, 'destroy']);
     Route::get('/usuarios/aniversariantes', [UsuarioController::class, 'aniversariantes']);
 
     Route::get('/ranking/premios', [RankingController::class, 'premiosOptions']);
