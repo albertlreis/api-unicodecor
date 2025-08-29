@@ -2,140 +2,139 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\GaleriaImagemResource;
+use App\Http\Resources\GaleriaResource;
+use App\Http\Resources\GaleriaShowResource;
 use App\Models\Galeria;
 use App\Models\GaleriaImagem;
+use App\Services\GaleriaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Controlador de Galerias (álbuns) e Imagens.
- *
- * @phpstan-type GaleriaListItem array{id:int,descricao:string,quantidade:int,capa:?string}
- * @phpstan-type GaleriaShowImage array{id:int,arquivo:string}
- * @phpstan-type GaleriaShow array{descricao:string,imagens:array<int, GaleriaShowImage>}
  */
 class GaleriaController extends Controller
 {
-    /**
-     * Lista galerias com descrição, imagem de capa e total de imagens.
-     *
-     * @return JsonResponse
-     * @phpstan-return JsonResponse<array<int, GaleriaListItem>>
-     */
-    public function index(): JsonResponse
-    {
-        $galerias = Galeria::where('status', '!=', -1)
-            ->withCount(['imagens'])
-            ->with('imagemCapa')
-            ->orderByDesc('dt_criacao')
-            ->get()
-            ->map(function (Galeria $galeria) {
-                return [
-                    'id' => $galeria->idGalerias,
-                    'descricao' => (string) $galeria->descricao,
-                    'quantidade' => (int) $galeria->imagens_count,
-                    'capa' => $galeria->imagemCapa
-                        ? $this->urlImagem($galeria->imagemCapa->arquivo)
-                        : null,
-                ];
-            });
+    public function __construct(private readonly GaleriaService $service) {}
 
-        return response()->json($galerias->values());
+    /**
+     * GET /galerias
+     * Admin: pode filtrar status e min_qtd; Demais: força status=1 e min_qtd>=1.
+     *
+     * @param  Request $request
+     * @return JsonResponse
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $status = $request->has('status')
+            ? $request->integer('status')
+            : null;
+
+        $filtros = [
+            'status'   => $status,
+            'min_qtd'  => $request->integer('min_qtd', null),
+            'per_page' => $request->integer('per_page', null),
+        ];
+
+        $data = $this->service->listar($filtros, (int) $user->id_perfil);
+
+        return response()->json(GaleriaResource::collection($data));
     }
 
     /**
-     * Mostra todas as imagens de uma galeria.
+     * GET /galerias/{id}
      *
      * @param int $id
+     * @param \Illuminate\Http\Request $request
      * @return JsonResponse
-     * @phpstan-return JsonResponse<GaleriaShow>
      */
-    public function show(int $id): JsonResponse
+    public function show(int $id, Request $request): JsonResponse
     {
-        $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
-        $imagens = $galeria->imagens()->orderBy('dt_criacao', 'desc')->get();
+        $perfilId = (int) $request->user()->id_perfil;
+        $galeria = $this->service->detalhar($id, $perfilId);
 
-        return response()->json([
-            'descricao' => (string) $galeria->descricao,
-            'imagens' => $imagens->map(function (GaleriaImagem $img) {
-                return [
-                    'id' => $img->idGaleriaImagens,
-                    'arquivo' => $this->urlImagem($img->arquivo),
-                ];
-            })->values(),
-        ]);
+        return response()->json(new GaleriaShowResource($galeria));
     }
 
     /**
-     * Cria uma galeria.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * POST /galerias
+     * Apenas admin.
      */
     public function store(Request $request): JsonResponse
     {
-        $data = $this->validateGaleria($request);
+        Gate::authorize('manage-galerias');
 
-        $galeria = new Galeria();
-        $galeria->descricao = $data['descricao'];
-        $galeria->status = 1;
-        $galeria->save();
+        $data = $request->validate([
+            'descricao' => ['required', 'string', 'max:3000'],
+        ]);
+
+        $galeria = $this->service->criar($data);
 
         return response()->json([
             'message' => 'Galeria criada com sucesso.',
-            'id' => $galeria->idGalerias,
+            'id'      => $galeria->idGalerias,
         ], 201);
     }
 
     /**
-     * Atualiza uma galeria (somente descrição por ora).
-     *
-     * @param Request $request
-     * @param int $id
-     * @return JsonResponse
+     * PUT /galerias/{id}
+     * Apenas admin.
      */
     public function update(Request $request, int $id): JsonResponse
     {
-        $galeria = Galeria::findOrFail($id);
-        $data = $this->validateGaleria($request);
+        Gate::authorize('manage-galerias');
 
-        $galeria->descricao = $data['descricao'];
-        $galeria->save();
+        $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
+
+        $data = $request->validate([
+            'descricao' => ['required', 'string', 'max:3000'],
+        ]);
+
+        $this->service->atualizar($galeria, $data);
 
         return response()->json(['message' => 'Galeria atualizada com sucesso.']);
     }
-
     /**
-     * Exclui uma galeria (soft delete lógico por status = -1).
+     * DELETE /galerias/{id}
+     * Apenas admin.
      *
-     * @param int $id
+     * @param  int $id
      * @return JsonResponse
      */
     public function destroy(int $id): JsonResponse
     {
-        $galeria = Galeria::findOrFail($id);
-        $galeria->status = -1;
-        $galeria->save();
+        Gate::authorize('manage-galerias');
 
-        return response()->json(['message' => 'Galeria removida com sucesso.']);
+        $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
+
+        $novoStatus = $galeria->status === 1 ? 0 : 1;
+        $this->service->alterarStatus($galeria, $novoStatus);
+
+        return response()->json([
+            'message' => $novoStatus === 1 ? 'Galeria ativada com sucesso.' : 'Galeria inativada com sucesso.',
+            'status'  => $novoStatus,
+            'id'      => (int) $galeria->idGalerias,
+        ]);
     }
 
     /**
-     * Envia/associa uma imagem à galeria. Recebe multipart (campo "arquivo").
-     *
-     * @param Request $request
-     * @param int $id
-     * @return JsonResponse
+     * POST /galerias/{id}/imagens
+     * Apenas admin.
+     * @throws \Illuminate\Validation\ValidationException
      */
     public function storeImagem(Request $request, int $id): JsonResponse
     {
+        Gate::authorize('manage-galerias');
+
         $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
 
         $request->validate([
-            'arquivo' => ['required', 'file', 'mimes:jpg,jpeg,png,gif,webp', 'max:5120'], // até 5MB
+            'arquivo' => ['required', 'file', 'mimes:jpg,jpeg,png,gif,webp', 'max:5120'],
         ]);
 
         $file = $request->file('arquivo');
@@ -143,107 +142,45 @@ class GaleriaController extends Controller
             throw ValidationException::withMessages(['arquivo' => 'Arquivo inválido.']);
         }
 
-        // salva na pasta public/galerias e guarda apenas o nome do arquivo
-        $path = $file->store('galerias');
-        $filename = basename($path);
+        $img = $this->service->adicionarImagem($galeria, $file);
 
-        $img = new GaleriaImagem();
-        $img->idGalerias = $galeria->idGalerias;
-        $img->arquivo = $filename; // somente o nome
-        $img->status = 1;
-        $img->save();
-
-        return response()->json([
-            'message' => 'Imagem enviada com sucesso.',
-            'id' => $img->idGaleriaImagens,
-            'arquivo' => $this->urlImagem($filename),
-        ], 201);
+        return response()->json(new GaleriaImagemResource($img), 201);
     }
 
     /**
-     * Remove uma imagem específica da galeria.
-     *
-     * @param int $id
-     * @param int $idImagem
-     * @return JsonResponse
+     * DELETE /galerias/{id}/imagens/{idImagem}
+     * Apenas admin.
      */
     public function destroyImagem(int $id, int $idImagem): JsonResponse
     {
-        $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
+        Gate::authorize('manage-galerias');
 
+        $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
         $img = GaleriaImagem::where('idGaleriaImagens', $idImagem)
             ->where('idGalerias', $galeria->idGalerias)
             ->firstOrFail();
 
-        DB::transaction(function () use ($galeria, $img) {
-            // Se era capa, limpa a referência
-            if ((int) $galeria->idGaleriaImagens === (int) $img->idGaleriaImagens) {
-                $galeria->idGaleriaImagens = null;
-                $galeria->save();
-            }
-
-            $img->status = -1;
-            $img->save();
-
-            // Opcional: remover arquivo físico (se quiser manter, comente)
-            if ($img->arquivo && Storage::exists("public/galerias/{$img->arquivo}")) {
-                Storage::delete("public/galerias/{$img->arquivo}");
-            }
-        });
+        $this->service->removerImagem($galeria, $img);
 
         return response()->json(['message' => 'Imagem removida com sucesso.']);
     }
 
     /**
-     * Define a imagem como capa da galeria.
-     *
-     * @param int $id
-     * @param int $idImagem
-     * @return JsonResponse
+     * PATCH /galerias/{id}/capa/{idImagem}
+     * Apenas admin.
      */
     public function definirCapa(int $id, int $idImagem): JsonResponse
     {
-        $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
+        Gate::authorize('manage-galerias');
 
+        $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
         $img = GaleriaImagem::where('idGaleriaImagens', $idImagem)
             ->where('idGalerias', $galeria->idGalerias)
             ->where('status', 1)
             ->firstOrFail();
 
-        $galeria->idGaleriaImagens = $img->idGaleriaImagens;
-        $galeria->save();
+        $this->service->definirCapa($galeria, $img);
 
         return response()->json(['message' => 'Capa definida com sucesso.']);
-    }
-
-    /**
-     * Valida payload de galeria (create/update).
-     *
-     * @param Request $request
-     * @return array{descricao:string}
-     */
-    private function validateGaleria(Request $request): array
-    {
-        /** @var array{descricao:string} $data */
-        $data = $request->validate([
-            'descricao' => ['required', 'string', 'max:3000'],
-        ]);
-
-        return $data;
-    }
-
-    /**
-     * Gera URL pública para a imagem (armazenada em storage/app/public/galerias).
-     *
-     * @param string $filename
-     * @return string
-     */
-    private function urlImagem(string $filename): string
-    {
-        // Se já vier com http(s), apenas retorna (defensivo)
-        if (str_starts_with($filename, 'http://') || str_starts_with($filename, 'https://')) {
-            return $filename;
-        }
-        return asset("storage/galerias/{$filename}");
     }
 }
