@@ -33,6 +33,8 @@ return [
     |
     */
 
+    'admin_address' => env('ADMIN_EMAIL', 'admin@momento.com.br'),
+
     'mailers' => [
         'smtp' => [
             'transport' => 'smtp',

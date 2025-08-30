@@ -33,6 +33,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/pontuacoes', [PontuacaoController::class, 'index']);
     Route::post('/pontuacoes', [PontuacaoController::class, 'store']);
     Route::get('/pontuacoes/opcoes', [PontuacaoOpcoesController::class, 'index']);
+    Route::match(['put','patch'], '/pontuacoes/{ponto}', [PontuacaoController::class, 'update']);
+    Route::delete('/pontuacoes/{ponto}', [PontuacaoController::class, 'destroy']);
+    Route::get('/pontuacoes/{ponto}', [PontuacaoController::class, 'show']);
 
     Route::get('/premios', [PremioController::class, 'index']);
     Route::get('/premios/{premio}', [PremioController::class, 'show']);

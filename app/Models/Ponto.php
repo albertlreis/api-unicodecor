@@ -111,4 +111,9 @@ class Ponto extends Model
     {
         return $this->lojista?->nome;
     }
+
+    public function scopeAtivos($q)
+    {
+        return $q->where('status', 1);
+    }
 }
