@@ -5,6 +5,7 @@ use App\Http\Controllers\EmpreendimentoController;
 use App\Http\Controllers\MePremiosController;
 use App\Http\Controllers\GaleriaController;
 use App\Http\Controllers\LojaController;
+use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PlantasBaixasController;
 use App\Http\Controllers\PontuacaoOpcoesController;
 use App\Http\Controllers\PremioController;
@@ -18,6 +19,9 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PontuacaoController;
 
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/password/forgot', [PasswordResetController::class, 'forgot']);
+Route::get('/password/validate', [PasswordResetController::class, 'validateToken']);
+Route::post('/password/reset', [PasswordResetController::class, 'reset']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);

@@ -59,6 +59,8 @@ return [
 
     'asset_url' => env('ASSET_URL'),
 
+    'reset_password_url' => env('RESET_PASSWORD_URL', 'unicodecor://reset-password'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone
