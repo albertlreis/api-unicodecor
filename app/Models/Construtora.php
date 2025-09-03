@@ -31,23 +31,80 @@ class Construtora extends Model
     ];
 
     /**
-     * URL pública da imagem (tratando caminhos locais e URLs legadas).
+     * Normaliza um caminho de imagem para o formato relativo ao disco 'public',
+     * removendo prefixos "public/" e "storage/" e barras à esquerda.
+     *
+     * @param  string|null $value
+     * @return string|null
      */
-    public function getImagemUrlAttribute(): ?string
+    private function normalizeImagem(?string $value): ?string
     {
-        if (!$this->imagem) {
+        if ($value === null) {
             return null;
         }
 
-        if (Str::startsWith($this->imagem, ['http://', 'https://'])) {
-            return $this->imagem;
+        $raw = trim($value);
+        if ($raw === '') {
+            return null;
         }
 
-        // Normaliza: remove "public/" do início, se houver.
-        $path = ltrim(preg_replace('#^public/#', '', $this->imagem), '/');
+        // URLs completas permanecem como estão (acessor já trata).
+        if (Str::startsWith($raw, ['http://', 'https://'])) {
+            return $raw;
+        }
 
-        // Gera URL pública do disco 'public' (requer "php artisan storage:link")
-        return Storage::disk('public')->url($path);
+        // Remove barra inicial e prefixos de pasta expostos.
+        $raw = ltrim($raw, '/');
+        $raw = preg_replace('#^(public/|storage/)#', '', $raw);
+
+        // Evita retornar diretórios (sem extensão) como caminho válido.
+        $ext = pathinfo($raw, PATHINFO_EXTENSION);
+        if ($raw === '' || $ext === '') {
+            return null;
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Mutator: sempre salva `imagem` normalizada (ex.: "construtoras/uuid.jpg")
+     * ou `null` quando inválido.
+     *
+     * @param  string|null $value
+     * @return void
+     */
+    public function setImagemAttribute(?string $value): void
+    {
+        $normalized = $this->normalizeImagem($value);
+        $this->attributes['imagem'] = $normalized;
+    }
+
+    /**
+     * URL pública da imagem (tratando caminhos locais e URLs legadas).
+     *
+     * @return string|null
+     */
+    public function getImagemUrlAttribute(): ?string
+    {
+        $val = $this->imagem;
+
+        if (!$val) {
+            return null;
+        }
+
+        // Se já for URL completa, retorna direto.
+        if (Str::startsWith($val, ['http://', 'https://'])) {
+            return $val;
+        }
+
+        // Normaliza de novo por segurança (caso venha "public/..."/"storage/...").
+        $path = $this->normalizeImagem($val);
+        if (!$path) {
+            return null;
+        }
+
+        // Gera URL pública do disco 'public' (requer "php artisan storage:link").
+        return Storage::disk('public')->url($path); // => "/storage/construtoras/uuid.jpg"
     }
 
     /** Escopo: não excluídas (status >= 0). */
