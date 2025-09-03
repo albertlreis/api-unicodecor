@@ -58,8 +58,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::match(['put','patch'], '/lojas/{loja}', [LojaController::class, 'update']);
     Route::delete('/lojas/{loja}', [LojaController::class, 'destroy']);
 
-    Route::patch('/lojas/{loja}/status', [LojaController::class, 'alterarStatus']);
-
     // Extras
     Route::post('/lojas/{id}/restore', [LojaController::class, 'restore']);
     Route::patch('/lojas/{loja}/status', [LojaController::class, 'alterarStatus']);
