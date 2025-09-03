@@ -6,20 +6,27 @@ use App\Models\Premio;
 use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
  * Serviço de ranking/top100.
+ *
+ * Regras importantes:
+ * - Escopo 'geral' NUNCA envia id_loja para a procedure.
+ * - Escopo 'loja':
+ *   - Lojista (perfil 3) fica travado na própria loja (Auth::user()->loja_id).
+ *   - Admin (perfil 1) deve informar id_loja explicitamente.
+ * - Segurança aplicada no backend (não confiar apenas no front).
  */
 class RankingService
 {
     /**
-     * Retorna dados para o card do Top100 na Home, calculando
-     * automaticamente o ciclo vigente (01/08 → 31/07), mesmo
-     * sem registro em `premios`.
+     * Retorna dados para o card do Top100 na Home, calculando automaticamente o ciclo vigente
+     * (01/08 → 31/07), mesmo sem registro em `premios`.
      *
-     * @param int $userId
+     * @param  int $userId
      * @return array{
      *   colocacao: int|null,
      *   pontuacao_total: string,
@@ -34,10 +41,10 @@ class RankingService
     {
         [$inicio, $fim, $label] = $this->resolverJanelaTop100();
 
-        // ===== Subconsulta base: total de pontos por profissional no ciclo Top100
+        // Subconsulta base: total de pontos por profissional no ciclo Top100
         $base = $this->buildBaseSomaPontos($inicio, $fim);
 
-        // ===== 1) Tenta com window function (MySQL 8+ / MariaDB com suporte)
+        // 1) Tenta com window function (MySQL 8+/MariaDB com suporte)
         try {
             $ranked = DB::query()
                 ->fromSub($base, 'r')
@@ -48,19 +55,17 @@ class RankingService
                 ->where('t.id_profissional', '=', $userId)
                 ->first();
         } catch (Throwable) {
-            // ===== 2) Fallback portátil (sem window): conta quantos têm total maior e soma 1
-            // Para evitar reaproveitar a instância $base (bindings), reconstruímos a subconsulta.
+            // 2) Fallback portátil (sem window): conta quantos têm total maior e soma 1
             $base2 = $this->buildBaseSomaPontos($inicio, $fim);
 
             $rankedFallback = DB::query()
                 ->fromSub($base, 'r')
                 ->selectRaw(
-                // colocação = qtd de totais distintos maiores + 1 (empates têm a mesma colocação - efeito semelhante ao RANK)
                     'r.id_profissional, r.total, (SELECT COUNT(DISTINCT r2.total) + 1 FROM ( ' .
                     $base2->toSql() .
                     ' ) AS r2 WHERE r2.total > r.total) AS colocacao'
                 )
-                ->mergeBindings($base2); // traz os bindings do $base2 para esta query
+                ->mergeBindings($base2);
 
             $row = DB::query()
                 ->fromSub($rankedFallback, 't')
@@ -87,7 +92,7 @@ class RankingService
 
     /**
      * Constrói a subconsulta base com a soma de pontos por profissional,
-     * filtrando por status e período. Usa bind de parâmetros (sem datas cruas).
+     * filtrando por status e período.
      *
      * @param  Carbon $inicio
      * @param  Carbon $fim
@@ -108,7 +113,7 @@ class RankingService
 
     /**
      * Determina a janela atual do Top100.
-     * Regra: se mês >= 8 (ago), ciclo = ano atual/ano+1, senão = ano-1/ano.
+     * Regra: se mês >= 8 (ago), ciclo = ano atual/ano+1; senão = ano-1/ano.
      *
      * @return array{Carbon, Carbon, string} [inicio, fim, label]
      */
@@ -118,11 +123,11 @@ class RankingService
         $ano  = $hoje->year;
 
         if ($hoje->month >= 8) {
-            $inicio = Carbon::create($ano, 8)->startOfDay();   // 01/08/ano
-            $fim    = Carbon::create($ano + 1, 7, 31)->endOfDay(); // 31/07/ano+1
+            $inicio = Carbon::create($ano, 8)->startOfDay();        // 01/08/ano
+            $fim    = Carbon::create($ano + 1, 7, 31)->endOfDay();  // 31/07/ano+1
             $label  = sprintf('%d/%d', $ano, $ano + 1);
         } else {
-            $inicio = Carbon::create($ano - 1, 8)->startOfDay(); // 01/08/ano-1
+            $inicio = Carbon::create($ano - 1, 8)->startOfDay();    // 01/08/ano-1
             $fim    = Carbon::create($ano, 7, 31)->endOfDay();      // 31/07/ano
             $label  = sprintf('%d/%d', $ano - 1, $ano);
         }
@@ -131,22 +136,48 @@ class RankingService
     }
 
     /**
-     * Retorna o ranking geral com base no prêmio (obrigatório), com filtro opcional por loja.
+     * Retorna o ranking com base no prêmio (obrigatório), considerando o escopo.
      *
-     * @param \Illuminate\Http\Request $request
+     * @param  \Illuminate\Http\Request $request
      * @return array{
-     *   premio: array{id:int,titulo:string,dt_inicio:string,dt_fim:string,pontos:float|int},
+     *   premio: array{id:int|string,titulo:string,dt_inicio:string,dt_fim:string,pontos:float|int,_virtual?:bool,_tipo?:string,_ano?:int},
      *   dados: array<int, object>
      * }
      */
     public function listar(Request $request): array
     {
-        $idPremio = $request->input('id_premio'); // int OU "top100:YYYY"
+        $idPremio = $request->input('id_premio');
+        $escopo   = $request->input('escopo', 'geral'); // 'geral' | 'loja'
         $lojaId   = $request->filled('id_loja') ? (int) $request->input('id_loja') : null;
 
-        // Caso especial: prêmio virtual Top 100
+        // Perfil do usuário (1=Admin, 3=Lojista, 5=Secretaria etc.)
+        $user     = Auth::user();
+        $perfilId = (int) ($user->perfil_id ?? 0);
+        $isAdmin  = $perfilId === 1;
+        $isLojista= $perfilId === 3;
+
+        // Regra: se escopo for 'geral', NUNCA enviar loja para a procedure
+        if ($escopo === 'geral') {
+            $lojaId = null;
+        } else { // escopo === 'loja'
+            if ($isLojista) {
+                // Lojista sempre usa a própria loja
+                $lojaId = (int) ($user->loja_id ?? 0) ?: null;
+            } elseif ($isAdmin) {
+                if (!$lojaId) {
+                    abort(422, 'Loja obrigatória no escopo por loja.');
+                }
+            } else {
+                // Demais perfis que porventura usem escopo loja precisam de validação
+                if (!$lojaId) {
+                    abort(422, 'Loja obrigatória no escopo por loja.');
+                }
+            }
+        }
+
+        // Caso especial: prêmio virtual Top 100 - formato "top100:YYYY"
         if (is_string($idPremio) && preg_match('/^top100:(\d{4})$/', $idPremio, $m)) {
-            $ano = (int) $m[1];
+            $ano      = (int) $m[1];
             $dtInicio = Carbon::create($ano, 8)->toDateString();
             $dtFim    = Carbon::create($ano + 1, 7, 31)->toDateString();
 
@@ -168,17 +199,17 @@ class RankingService
         }
 
         // Fluxo normal (prêmio do banco)
-        $premio = Premio::findOrFail((int) $idPremio);
-
-        // "Top100 cadastrado" = sem faixas e pontos > 0
+        /** @var \App\Models\Premio $premio */
+        $premio   = Premio::findOrFail((int) $idPremio);
         $isTop100 = $this->isTop100($premio);
 
         if ($isTop100) {
             $dtInicio = $premio->dt_inicio->format('Y-m-d');
             $dtFim    = $premio->dt_fim->format('Y-m-d');
-            $dados = DB::select('CALL sp_ranking_top100_periodo(?, ?, ?)', [$dtInicio, $dtFim, $lojaId]);
+            $dados    = DB::select('CALL sp_ranking_top100_periodo(?, ?, ?)', [$dtInicio, $dtFim, $lojaId]);
         } else {
-            $dados = DB::select('CALL sp_ranking_geral_profissionais(?, ?)', [(int) $premio->id, $lojaId]);
+            // Procedure aceita (id_premio, id_loja|null)
+            $dados    = DB::select('CALL sp_ranking_geral_profissionais(?, ?)', [(int) $premio->id, $lojaId]);
         }
 
         return [
@@ -193,17 +224,21 @@ class RankingService
         ];
     }
 
-
-
     /**
-     * Retorna o ‘ranking’ detalhado (profissionais que atingiram e que não atingiram).
+     * Retorna o ranking detalhado (profissionais que atingiram e que não atingiram).
      *
      * @param  Request $request
-     * @return array
+     * @return array{
+     *   premio: array{id:int,titulo:string,dt_inicio:string,dt_fim:string,pontos:float|int},
+     *   atingiram?: array<int, array<string,mixed>>,
+     *   nao_atingiram?: array<int, array<string,mixed>>,
+     *   todos?: array<int, array<string,mixed>>
+     * }
      */
     public function obterRankingDetalhadoPorPremio(Request $request): array
     {
         $premioId = $request->input('id_premio');
+        /** @var \App\Models\Premio $premio */
         $premio = Premio::findOrFail($premioId);
 
         $isTop100 = $this->isTop100($premio);
@@ -215,11 +250,11 @@ class RankingService
 
             return [
                 'premio' => [
-                    'id'       => $premio->id,
-                    'titulo'   => $premio->titulo,
-                    'dt_inicio'=> $premio->dt_inicio->format('Y-m-d'),
-                    'dt_fim'   => $premio->dt_fim->format('Y-m-d'),
-                    'pontos'   => $premio->pontos,
+                    'id'        => $premio->id,
+                    'titulo'    => $premio->titulo,
+                    'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
+                    'dt_fim'    => $premio->dt_fim->format('Y-m-d'),
+                    'pontos'    => $premio->pontos,
                 ],
                 'todos' => $todos,
             ];
@@ -235,22 +270,27 @@ class RankingService
 
         return [
             'premio' => [
-                'id'       => $premio->id,
-                'titulo'   => $premio->titulo,
-                'dt_inicio'=> $premio->dt_inicio->format('Y-m-d'),
-                'dt_fim'   => $premio->dt_fim->format('Y-m-d'),
-                'pontos'   => $premio->pontos,
+                'id'        => $premio->id,
+                'titulo'    => $premio->titulo,
+                'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
+                'dt_fim'    => $premio->dt_fim->format('Y-m-d'),
+                'pontos'    => $premio->pontos,
             ],
-            'atingiram'      => $atingiram,
-            'nao_atingiram'  => $naoAtingiram,
+            'atingiram'     => $atingiram,
+            'nao_atingiram' => $naoAtingiram,
         ];
     }
 
     /**
-     * Converte linhas de ‘ranking’ em estrutura agrupada por profissional.
+     * Converte linhas de ranking em estrutura agrupada por profissional.
      *
-     * @param  array $linhas
-     * @return array
+     * @param  array<int, object> $linhas
+     * @return array<int, array{
+     *   id_profissional:int,
+     *   nome:string,
+     *   total:float,
+     *   pontos: array<int, array{loja:string,total:float}>
+     * }>
      */
     private function consolidarPorProfissional(array $linhas): array
     {
@@ -268,7 +308,7 @@ class RankingService
                 ];
             }
 
-            $valor = (float) $linha->total;
+            $valor = (float) ($linha->total ?? 0);
             $consolidado[$id]['pontos'][] = [
                 'loja'  => $linha->loja,
                 'total' => $valor,
@@ -293,7 +333,7 @@ class RankingService
     {
         return $premio->status === 1
             && is_null(DB::table('premio_faixas')->where('id_premio', $premio->id)->first())
-            && $premio->pontos > 0;
+            && (float) $premio->pontos > 0;
     }
 
     /**
@@ -358,5 +398,4 @@ class RankingService
 
         return [$mk($atual), $mk($proximo)];
     }
-
 }
