@@ -12,25 +12,31 @@ use Illuminate\Http\JsonResponse;
 class RateioController extends Controller
 {
     /**
-     * Retorna os dados de rateio por modo:
-     * - modo=profissional: requer id_premio; opcional id_profissional
-     * - modo=loja: requer id_premio; opcional id_loja
-     * - modo=consolidado: requer ids_premios (array de IDs)
-     *
-     * @param  RateioRequest  $request
-     * @param  RateioService  $service
-     * @return JsonResponse
+     * @route GET /rateio
+     * @param RateioRequest $request
+     * @param RateioService $service
+     * @return \Illuminate\Http\JsonResponse
      */
     public function index(RateioRequest $request, RateioService $service): JsonResponse
     {
         $modo           = $request->input('modo', 'profissional');
         $idPremio       = $request->input('id_premio');
-        $idsPremios     = $request->input('ids_premios', []);
+        $idsPremios     = (array) $request->input('ids_premios', []);
         $idProfissional = $request->input('id_profissional');
-        $idLoja         = $request->input('id_loja');
+        $idLojaInput    = $request->input('id_loja');
+
+        $user = $request->user();
+
+        $isLojista       = (int) ($user->id_perfil ?? 0) === 3;
+        $idLojaRestrita  = $isLojista ? (int) $user->id_loja : null;
+        $idLojaFinal     = $isLojista ? $idLojaRestrita : ($idLojaInput ? (int) $idLojaInput : null);
 
         if ($modo === 'profissional' && $idPremio) {
-            $dados = $service->rateioPorProfissional((int) $idPremio, $idProfissional ? (int) $idProfissional : null);
+            $dados = $service->rateioPorProfissional(
+                (int) $idPremio,
+                $idProfissional ? (int) $idProfissional : null,
+                $idLojaRestrita
+            );
             return response()->json([
                 'modo'  => 'profissional',
                 'dados' => RateioPorProfissionalResource::collection($dados),
@@ -38,7 +44,12 @@ class RateioController extends Controller
         }
 
         if ($modo === 'loja' && $idPremio) {
-            $dados = $service->rateioPorLoja((int) $idPremio, $idLoja ? (int) $idLoja : null);
+            $dados = $service->rateioPorLoja(
+                (int) $idPremio,
+                $idLojaFinal,
+                $idLojaRestrita
+            );
+
             return response()->json([
                 'modo'  => 'loja',
                 'dados' => RateioPorLojaResource::collection($dados),
@@ -46,15 +57,17 @@ class RateioController extends Controller
         }
 
         if ($modo === 'consolidado' && !empty($idsPremios)) {
-            $dados = $service->rateioConsolidado(array_map('intval', (array) $idsPremios));
+            $dados = $service->rateioConsolidado(
+                array_map('intval', $idsPremios),
+                $idLojaRestrita
+            );
+
             return response()->json([
                 'modo'  => 'consolidado',
                 'dados' => RateioConsolidadoResource::collection($dados),
             ]);
         }
 
-        return response()->json([
-            'erro' => 'Parâmetros inválidos ou incompletos.'
-        ], 422);
+        return response()->json(['erro' => 'Parâmetros inválidos ou incompletos.'], 422);
     }
 }

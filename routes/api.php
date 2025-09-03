@@ -40,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/premios', [PremioController::class, 'index']);
     Route::get('/premios/{premio}', [PremioController::class, 'show']);
     Route::post('/premios', [PremioController::class, 'store']);
+    Route::patch('/premios/faixas/{faixa}/valor-viagem', [PremioController::class, 'atualizarValorViagemFaixa']);
     Route::match(['put','patch'], '/premios/{premio}', [PremioController::class, 'update']);
 
     Route::get('/banners', [BannerController::class, 'index'])->name('banners.index');
