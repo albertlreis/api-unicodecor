@@ -47,6 +47,7 @@ class PremioIndexRequest extends FormRequest
             'data_base'       => ['nullable', 'date_format:Y-m-d'],
             'ids'             => ['nullable', 'array'],
             'ids.*'           => ['integer', 'min:1'],
+            'incluir_enquadramento'=> ['nullable', 'boolean'],
         ];
     }
 
@@ -55,6 +56,18 @@ class PremioIndexRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        if ($this->has('incluir_enquadramento')) {
+            $raw = $this->input('incluir_enquadramento');
+
+            // Aceita 1/0, "1"/"0", "true"/"false", "on"/"off"
+            $casted = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+            // Se não der pra converter, mantém null para cair na rule nullable
+            $this->merge([
+                'incluir_enquadramento' => $casted,
+            ]);
+        }
+
         // aliases do front → nomes oficiais
         $ordenar = $this->input('ordenar_por', $this->input('orderBy'));
         $orden   = $this->input('orden', $this->input('orderDir'));

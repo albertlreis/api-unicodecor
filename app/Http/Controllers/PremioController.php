@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Domain\Premios\Contracts\PremioRepository;
+use App\Domain\Premios\Services\PremioFaixaResolver;
+use App\Http\Requests\PremioFaixaValorViagemRequest;
 use App\Http\Requests\PremioIndexRequest;
 use App\Http\Requests\PremioStoreRequest;
 use App\Http\Requests\PremioUpdateRequest;
@@ -21,13 +23,16 @@ use Illuminate\Support\Str;
 class PremioController extends Controller
 {
     public function __construct(
-        private readonly PremioRepository $premios
+        private readonly PremioRepository $premios,
+        private readonly PremioFaixaResolver $resolver,
     ) {}
 
     /**
      * GET /premios
      *
-     * Lista com filtros e paginação (mantido).
+     * Lista com filtros e paginação. Quando solicitado (incluir_enquadramento=1) e o
+     * usuário for PROFISSIONAL (perfil_id = 2), injeta em 'meta' o id da campanha
+     * em que ele está enquadrado no dia (highlight_premio_id) e os dias restantes.
      */
     public function index(PremioIndexRequest $request): JsonResponse
     {
@@ -36,15 +41,40 @@ class PremioController extends Controller
 
         $paginator = $this->premios->listarPorFiltros($filtros);
 
+        // 🔎 Descobrir se devemos calcular o enquadramento do usuário
+        $highlightPremioId = null;
+        $diasRestantesEnquadrado = null;
+
+        $user   = $request->user();
+        $perfil = (int) ($user->perfil_id ?? $user->id_perfil ?? 0);
+        $querEnquadramento = (bool) ($filtros['incluir_enquadramento'] ?? false);
+
+        if ($querEnquadramento && $perfil === 2) {
+            // Reaproveita a lógica consolidada do resolver (sem expor /me/premios).
+            $payload = $this->resolver->resolver(
+                usuarioId: (int)$user->id,
+                dataBase: $filtros['data_base'] ?? null,
+                incluirProximasFaixas: false,    // não precisamos dessas listas aqui
+                incluirProximasCampanhas: false
+            );
+
+            if (!empty($payload['campanha']['id'])) {
+                $highlightPremioId       = (int) $payload['campanha']['id'];
+                $diasRestantesEnquadrado = (int) ($payload['dias_restantes'] ?? 0);
+            }
+        }
+
         return response()->json([
             'sucesso'  => true,
             'mensagem' => 'Lista de prêmios',
             'data'     => PremioResource::collection($paginator->items()),
             'meta'     => [
-                'current_page' => $paginator->currentPage(),
-                'per_page'     => $paginator->perPage(),
-                'total'        => $paginator->total(),
-                'last_page'    => $paginator->lastPage(),
+                'current_page'              => $paginator->currentPage(),
+                'per_page'                  => $paginator->perPage(),
+                'total'                     => $paginator->total(),
+                'last_page'                 => $paginator->lastPage(),
+                'highlight_premio_id'       => $highlightPremioId,
+                'dias_restantes_enquadrado' => $diasRestantesEnquadrado,
             ],
         ]);
     }
@@ -268,5 +298,38 @@ class PremioController extends Controller
                 ->where('id_premio', $premio->id)
                 ->delete();
         }
+    }
+
+    /**
+     * PATCH /premios/faixas/{faixa}/valor-viagem
+     *
+     * Atualiza apenas o campo 'vl_viagem' da faixa informada.
+     * - Restrito a administradores (perfil_id === 1), verificado no FormRequest.
+     * - Não altera mais nada da faixa.
+     *
+     * @param  PremioFaixaValorViagemRequest $request
+     * @param  PremioFaixa                   $faixa
+     * @return JsonResponse
+     */
+    public function atualizarValorViagemFaixa(PremioFaixaValorViagemRequest $request, PremioFaixa $faixa): JsonResponse
+    {
+        /** @var array{vl_viagem: float|null} $data */
+        $data = $request->validated();
+
+        // Atualiza pontualmente
+        $faixa->vl_viagem = array_key_exists('vl_viagem', $data) ? $data['vl_viagem'] : $faixa->vl_viagem;
+        $faixa->save();
+
+        return response()->json([
+            'sucesso'  => true,
+            'mensagem' => 'Valor da viagem atualizado com sucesso.',
+            'dados'    => [
+                'id'         => $faixa->id,
+                'id_premio'  => $faixa->id_premio,
+                'pontos_min' => $faixa->pontos_min,
+                'pontos_max' => $faixa->pontos_max,
+                'vl_viagem'  => $faixa->vl_viagem,
+            ],
+        ]);
     }
 }
