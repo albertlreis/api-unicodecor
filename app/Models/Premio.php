@@ -2,37 +2,47 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
- * @property int $id
- * @property string|null $titulo
- * @property string|null $descricao
- * @property string|null $regras
- * @property string|null $regulamento
- * @property string|null $site
- * @property string|null $banner
- * @property float|null $pontos
- * @property float|null $valor_viagem
- * @property Carbon|string|null $dt_inicio
- * @property Carbon|string|null $dt_fim
- * @property Carbon|string|null $dt_cadastro
- * @property int|null $status
+ * Modelo de Prêmios/Campanhas.
+ *
+ * @property int                 $id
+ * @property string|null         $titulo
+ * @property string|null         $descricao
+ * @property string|null         $regras
+ * @property string|null         $regulamento  Caminho relativo no disco 'public' (ex.: "premios/regulamentos/arquivo.pdf")
+ * @property string|null         $site
+ * @property string|null         $banner       Caminho relativo no disco 'public' (ex.: "premios/banners/arquivo.jpg")
+ * @property float|null          $pontos
+ * @property float|null          $valor_viagem
+ * @property Carbon|string|null  $dt_inicio
+ * @property Carbon|string|null  $dt_fim
+ * @property Carbon|string|null  $dt_cadastro
+ * @property int|null            $status
+ * @property-read string|null    $banner_url
+ * @property-read string|null    $regulamento_url
+ *
  * @method static findOrFail(mixed $premioId)
  */
 class Premio extends Model
 {
+    /** @var string */
     protected $table = 'premios';
+
+    /** @var bool */
     public $timestamps = false;
 
+    /** Diretórios padrão no disco 'public'. */
     public const BANNER_DIR      = 'premios/banners';
     public const REGULAMENTO_DIR = 'premios/regulamentos';
 
+    /** @var array<int, string> */
     protected $fillable = [
         'titulo',
         'descricao',
@@ -47,12 +57,20 @@ class Premio extends Model
         'status',
     ];
 
+    /** @var array<string, string> */
     protected $casts = [
-        'dt_inicio'    => 'datetime',
-        'dt_fim'       => 'datetime',
-        'dt_cadastro'  => 'datetime',
-        'status'       => 'integer',
+        'dt_inicio'   => 'datetime',
+        'dt_fim'      => 'datetime',
+        'dt_cadastro' => 'datetime',
+        'status'      => 'integer',
     ];
+
+    /** @var array<int, string> */
+    protected $appends = ['banner_url', 'regulamento_url'];
+
+    // ------------------------------------------------------------------------------
+    // Relações
+    // ------------------------------------------------------------------------------
 
     /** @return HasMany */
     public function faixas(): HasMany
@@ -60,19 +78,28 @@ class Premio extends Model
         return $this->hasMany(PremioFaixa::class, 'id_premio')->orderBy('pontos_min');
     }
 
-    // Accessors utilitários (mantidos sem HTML):
+    // ------------------------------------------------------------------------------
+    // Accessors utilitários de data (sem HTML)
+    // ------------------------------------------------------------------------------
+
     public function getDtCadastroFormatadoAttribute(): ?string
     {
         return $this->dt_cadastro ? Carbon::parse($this->dt_cadastro)->format('d/m/Y') : null;
     }
+
     public function getDtInicioFormatadoAttribute(): ?string
     {
         return $this->dt_inicio ? Carbon::parse($this->dt_inicio)->format('d/m/Y') : null;
     }
+
     public function getDtFimFormatadoAttribute(): ?string
     {
         return $this->dt_fim ? Carbon::parse($this->dt_fim)->format('d/m/Y') : null;
     }
+
+    // ------------------------------------------------------------------------------
+    // Escopos
+    // ------------------------------------------------------------------------------
 
     /**
      * Escopo para campanhas ATIVAS na data informada (entre início e fim).
@@ -93,47 +120,102 @@ class Premio extends Model
             ->whereDate('dt_fim', '>=', $hoje);
     }
 
+    // ------------------------------------------------------------------------------
+    // Normalização de arquivos e mutators
+    // ------------------------------------------------------------------------------
+
     /**
-     * Resolve URL absoluta para um arquivo no disk 'public'.
+     * Normaliza um caminho de arquivo relativo ao disco 'public'.
      *
-     * - Se $filename já for URL absoluta (http/https), retorna como está;
-     * - Se estiver vazio, retorna null;
-     * - Caso contrário, monta Storage::disk('public')->url("$baseDir/$filename").
+     * Regras:
+     * - Remove URLs absolutas antigas (extrai somente o basename do path).
+     * - Remove prefixos "public/" e "storage/" e barras iniciais.
+     * - Se não houver subpasta, prefixa o diretório informado ($baseDir).
+     * - Retorna null para vazio ou quando não há extensão (evita diretórios).
      *
-     * @param  string|null $filename
-     * @param  string      $baseDir
-     * @return string|null
+     * @param  string|null $value    Valor de entrada (pode ser URL absoluta, caminho com prefixos ou só o arquivo)
+     * @param  string      $baseDir  Diretório padrão (ex.: self::BANNER_DIR)
+     * @return string|null           Caminho normalizado (ex.: "premios/banners/arquivo.jpg")
      */
-    protected function resolvePublicUrl(?string $filename, string $baseDir): ?string
+    protected function normalizeFile(?string $value, string $baseDir): ?string
     {
-        if (empty($filename)) {
+        if ($value === null) {
             return null;
         }
 
-        if (Str::startsWith($filename, ['http://', 'https://'])) {
-            return $filename;
+        $raw = trim($value);
+        if ($raw === '') {
+            return null;
         }
 
-        return Storage::disk('public')->url(trim($baseDir, '/').'/'.$filename);
+        // Se vier URL absoluta, extrai apenas o arquivo do path
+        if (Str::startsWith($raw, ['http://', 'https://'])) {
+            $raw = basename(parse_url($raw, PHP_URL_PATH) ?: $raw);
+        }
+
+        // Limpa prefixos e barras iniciais
+        $raw = ltrim($raw, '/');
+        $raw = preg_replace('#^(public/|storage/)#', '', $raw);
+
+        // Prefixa diretório padrão se não houver subpasta
+        if ($raw !== '' && !str_contains($raw, '/')) {
+            $raw = trim($baseDir, '/') . '/' . $raw;
+        }
+
+        // Evita retornar diretórios sem arquivo (sem extensão)
+        $ext = pathinfo($raw, PATHINFO_EXTENSION);
+        if ($raw === '' || $ext === '') {
+            return null;
+        }
+
+        return $raw;
     }
 
     /**
-     * URL absoluta do banner.
+     * Mutator para o banner: salva **normalizado** (ex.: "premios/banners/arquivo.jpg") ou null.
+     *
+     * @param  string|null $value
+     * @return void
+     */
+    public function setBannerAttribute(?string $value): void
+    {
+        $this->attributes['banner'] = $this->normalizeFile($value, self::BANNER_DIR);
+    }
+
+    /**
+     * Mutator para o regulamento: salva **normalizado** (ex.: "premios/regulamentos/arquivo.pdf") ou null.
+     *
+     * @param  string|null $value
+     * @return void
+     */
+    public function setRegulamentoAttribute(?string $value): void
+    {
+        $this->attributes['regulamento'] = $this->normalizeFile($value, self::REGULAMENTO_DIR);
+    }
+
+    // ------------------------------------------------------------------------------
+    // Accessors de URL pública (sempre via Storage)
+    // ------------------------------------------------------------------------------
+
+    /**
+     * URL pública do banner (sempre via Storage 'public').
      *
      * @return string|null
      */
     public function getBannerUrlAttribute(): ?string
     {
-        return $this->resolvePublicUrl($this->banner, self::BANNER_DIR);
+        $path = $this->normalizeFile($this->banner, self::BANNER_DIR);
+        return $path ? Storage::disk('public')->url($path) : null;
     }
 
     /**
-     * URL absoluta do regulamento (PDF).
+     * URL pública do regulamento (sempre via Storage 'public').
      *
      * @return string|null
      */
     public function getRegulamentoUrlAttribute(): ?string
     {
-        return $this->resolvePublicUrl($this->regulamento, self::REGULAMENTO_DIR);
+        $path = $this->normalizeFile($this->regulamento, self::REGULAMENTO_DIR);
+        return $path ? Storage::disk('public')->url($path) : null;
     }
 }
