@@ -26,37 +26,71 @@ class ConstrutorasController extends Controller
      * Filtros:
      * - q: busca por razão social (LIKE)
      * - status: 1, 0 ou 'all' (padrão: status >= 0)
+     * - all: 1 para retornar todos os registros (sem paginação)
+     * - include_ids: CSV ou array de IDs para forçar inclusão mesmo se filtrados (útil na edição)
      */
     public function index(Request $request): JsonResponse
     {
-        $q      = trim((string) $request->query('q', ''));
-        $status = $request->query('status');
+        $q        = trim((string) $request->query('q', ''));
+        $status   = $request->query('status');
+        $perPage  = (int) $request->query('per_page', 15);
+        $all      = (int) $request->query('all', 0) === 1;
 
-        $perPage = (int) $request->query('per_page', 15);
+        // parse include_ids (CSV ou array)
+        $includeParam = $request->query('include_ids', []);
+        $includeIds = collect(is_array($includeParam) ? $includeParam : explode(',', (string) $includeParam))
+            ->map(fn ($v) => (int) $v)
+            ->filter(fn ($v) => $v > 0)
+            ->unique()
+            ->values()
+            ->all();
 
         $query = Construtora::query();
 
+        // Por padrão, não retorna excluídas (status = -1)
         if ($status !== 'all') {
             $query->naoExcluidas();
         }
 
+        // Filtro por status explícito
         if ($status === '0' || $status === 0) {
             $query->where('status', 0);
         } elseif ($status === '1' || $status === 1) {
             $query->where('status', 1);
         }
-
+        // Busca textual
         if ($q !== '') {
             $query->where('razao_social', 'like', '%' . $q . '%');
         }
 
         $query->orderBy('razao_social', 'asc');
 
+        // ✅ Quando all=1, retornamos tudo sem paginação
+        if ($all) {
+            $items = $query->get();
+
+            // Força inclusão dos IDs informados (ignorando filtros)
+            if (!empty($includeIds)) {
+                // Atenção ao nome da PK na sua tabela (usa-se idConstrutoras no relacionamento)
+                $extras = Construtora::query()
+                    ->whereIn('idConstrutoras', $includeIds)
+                    ->get();
+
+                // Merge sem duplicar (uniqueness por idConstrutoras)
+                $items = $items->concat($extras)->unique('idConstrutoras')->values();
+            }
+
+            return response()->json([
+                'data' => ConstrutoraResource::collection($items),
+            ]);
+        }
+
+        // Paginação padrão (sem merge para manter meta coerente)
         $paginator = $query->paginate($perPage)->appends($request->query());
 
         return response()->json([
             'data' => ConstrutoraResource::collection($paginator->items()),
-            'meta'    => [
+            'meta' => [
                 'current_page' => $paginator->currentPage(),
                 'per_page'     => $paginator->perPage(),
                 'total'        => $paginator->total(),
