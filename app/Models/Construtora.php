@@ -30,9 +30,14 @@ class Construtora extends Model
         'status' => 'integer',
     ];
 
+    /** Diretório padrão das imagens no disco 'public'. */
+    private const IMAGE_DIR = 'construtoras';
+
     /**
-     * Normaliza um caminho de imagem para o formato relativo ao disco 'public',
-     * removendo prefixos "public/" e "storage/" e barras à esquerda.
+     * Normaliza um caminho de imagem relativo ao disco 'public'.
+     * - Preserva URLs absolutas.
+     * - Remove prefixos "public/" e "storage/".
+     * - Se não houver subpasta, prefixa "construtoras/".
      *
      * @param  string|null $value
      * @return string|null
@@ -48,16 +53,21 @@ class Construtora extends Model
             return null;
         }
 
-        // URLs completas permanecem como estão (acessor já trata).
+        // URLs completas permanecem como estão.
         if (Str::startsWith($raw, ['http://', 'https://'])) {
             return $raw;
         }
 
-        // Remove barra inicial e prefixos de pasta expostos.
+        // Remove barra inicial e prefixos expostos.
         $raw = ltrim($raw, '/');
         $raw = preg_replace('#^(public/|storage/)#', '', $raw);
 
-        // Evita retornar diretórios (sem extensão) como caminho válido.
+        // Se veio só o nome do arquivo (sem '/'), prefixa o diretório padrão.
+        if (!str_contains($raw, '/')) {
+            $raw = self::IMAGE_DIR . '/' . $raw;
+        }
+
+        // Evita retornar diretórios sem arquivo.
         $ext = pathinfo($raw, PATHINFO_EXTENSION);
         if ($raw === '' || $ext === '') {
             return null;
@@ -67,16 +77,14 @@ class Construtora extends Model
     }
 
     /**
-     * Mutator: sempre salva `imagem` normalizada (ex.: "construtoras/uuid.jpg")
-     * ou `null` quando inválido.
+     * Mutator: salva `imagem` normalizada (ex.: "construtoras/uuid.jpg") ou `null`.
      *
      * @param  string|null $value
      * @return void
      */
     public function setImagemAttribute(?string $value): void
     {
-        $normalized = $this->normalizeImagem($value);
-        $this->attributes['imagem'] = $normalized;
+        $this->attributes['imagem'] = $this->normalizeImagem($value);
     }
 
     /**
@@ -92,19 +100,19 @@ class Construtora extends Model
             return null;
         }
 
-        // Se já for URL completa, retorna direto.
+        // Se já for URL absoluta, retorna como está.
         if (Str::startsWith($val, ['http://', 'https://'])) {
             return $val;
         }
 
-        // Normaliza de novo por segurança (caso venha "public/..."/"storage/...").
+        // Normaliza e garante diretório padrão quando necessário.
         $path = $this->normalizeImagem($val);
         if (!$path) {
             return null;
         }
 
-        // Gera URL pública do disco 'public' (requer "php artisan storage:link").
-        return Storage::disk('public')->url($path); // => "/storage/construtoras/uuid.jpg"
+        // Gera URL pública (requer "php artisan storage:link").
+        return Storage::disk('public')->url($path); // "/storage/construtoras/arquivo.jpg"
     }
 
     /** Escopo: não excluídas (status >= 0). */
@@ -120,7 +128,7 @@ class Construtora extends Model
     }
 
     /**
-     * Retorna os empreendimentos vinculados à construtora.
+     * Empreendimentos vinculados.
      *
      * @return HasMany
      */
