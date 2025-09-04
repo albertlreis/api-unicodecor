@@ -38,8 +38,8 @@ class PremioStoreRequest extends FormRequest
             // Faixas
             'faixas'                      => ['array'],
             'faixas.*.id'                 => ['sometimes', 'integer', 'min:1'],
-            'faixas.*.pontos_min'         => ['required', 'integer', 'min:0'],
-            'faixas.*.pontos_max'         => ['nullable', 'integer', 'min:0'],
+            'faixas.*.pontos_min'         => ['required', 'numeric', 'min:0'],
+            'faixas.*.pontos_max'         => ['nullable', 'numeric', 'min:0'],
             'faixas.*.vl_viagem'          => ['required', 'numeric', 'min:0'],
             'faixas.*.acompanhante'       => ['required', 'in:0,1'],
             'faixas.*.descricao'          => ['nullable', 'string'],
