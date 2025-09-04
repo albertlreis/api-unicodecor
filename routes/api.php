@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\ConstrutorasController;
 use App\Http\Controllers\EmpreendimentoController;
 use App\Http\Controllers\MePremiosController;
@@ -113,5 +114,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/profissionais/{id}',   [ProfissionalController::class, 'show']);
     Route::put('/profissionais/{id}',   [ProfissionalController::class, 'update']);
     Route::delete('/profissionais/{id}',[ProfissionalController::class, 'destroy']);
+
+    Route::get('/clientes', [ClienteController::class, 'index']);
+    Route::post('/clientes', [ClienteController::class, 'store']);
 
 });

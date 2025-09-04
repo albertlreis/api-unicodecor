@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Profissional;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 
 /**
  * Orquestra criação/atualização de profissionais (hash de senha, etc.).
@@ -24,7 +23,7 @@ class ProfissionalService
 
         return DB::transaction(function () use ($data) {
             if (!empty($data['senha'])) {
-                $data['senha'] = Hash::make($data['senha']);
+                $data['senha'] = md5($data['senha']);
             }
 
             // status padrão 1 (ativo) se nada for enviado
@@ -52,9 +51,9 @@ class ProfissionalService
         return DB::transaction(function () use ($prof, $data) {
             if (array_key_exists('senha', $data)) {
                 if (!empty($data['senha'])) {
-                    $data['senha'] = Hash::make($data['senha']);
+                    $data['senha'] = md5($data['senha']);
                 } else {
-                    unset($data['senha']); // não sobreescreve com vazio
+                    unset($data['senha']);
                 }
             }
 
