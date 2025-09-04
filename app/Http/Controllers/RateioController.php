@@ -37,9 +37,13 @@ class RateioController extends Controller
                 $idProfissional ? (int) $idProfissional : null,
                 $idLojaRestrita
             );
+
+            $faixas = $service->faixasSemCustoPorPremio((int) $idPremio);
+
             return response()->json([
                 'modo'  => 'profissional',
                 'dados' => RateioPorProfissionalResource::collection($dados),
+                'faixas_sem_custo'  => $faixas,
             ]);
         }
 
@@ -50,21 +54,53 @@ class RateioController extends Controller
                 $idLojaRestrita
             );
 
+            $faixas = $service->faixasSemCustoPorPremio((int) $idPremio);
+
             return response()->json([
-                'modo'  => 'loja',
-                'dados' => RateioPorLojaResource::collection($dados),
+                'modo'              => 'loja',
+                'dados'             => RateioPorLojaResource::collection($dados),
+                'faixas_sem_custo'  => $faixas,
             ]);
         }
 
         if ($modo === 'consolidado' && !empty($idsPremios)) {
-            $dados = $service->rateioConsolidado(
+            [$linhasDetalhe, $totaisPorLoja] = $service->rateioConsolidadoComProfissionais(
                 array_map('intval', $idsPremios),
                 $idLojaRestrita
             );
 
+            $byLoja = [];
+            foreach ($linhasDetalhe as $row) {
+                $idLoja = (int) $row->id_loja;
+                if (!isset($byLoja[$idLoja])) {
+                    $byLoja[$idLoja] = [
+                        'id_loja'             => $idLoja,
+                        'nome_loja'           => (string) $row->nome_loja,
+                        'total_profissionais' => 0,
+                        'valor_total'         => 0.0,
+                        'profissionais'       => [],
+                    ];
+                }
+
+                $byLoja[$idLoja]['profissionais'][] = $row;
+            }
+
+            foreach ($totaisPorLoja as $t) {
+                $idLoja = (int) $t->id_loja;
+                if (isset($byLoja[$idLoja])) {
+                    $byLoja[$idLoja]['valor_total']         = (float) $t->valor_total;
+                    $byLoja[$idLoja]['total_profissionais'] = (int) $t->total_profissionais;
+                }
+            }
+
+            usort($byLoja, fn($a, $b) => strcmp($a['nome_loja'], $b['nome_loja']));
+
+            $faixas = $service->faixasSemCustoPorPremios(array_map('intval', $idsPremios));
+
             return response()->json([
-                'modo'  => 'consolidado',
-                'dados' => RateioConsolidadoResource::collection($dados),
+                'modo'              => 'consolidado',
+                'dados'             => RateioConsolidadoResource::collection(collect($byLoja)),
+                'faixas_sem_custo'  => $faixas,
             ]);
         }
 
