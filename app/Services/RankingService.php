@@ -23,13 +23,24 @@ use Throwable;
 class RankingService
 {
     /**
+     * Converte um valor numérico (float|string|null) para inteiro de pontos.
+     *
+     * @param  mixed $value
+     * @return int
+     */
+    private function toIntPoints(mixed $value): int
+    {
+        return (int) round((float) ($value ?? 0), 0, PHP_ROUND_HALF_UP);
+    }
+
+    /**
      * Retorna dados para o card do Top100 na Home, calculando automaticamente o ciclo vigente
      * (01/08 → 31/07), mesmo sem registro em `premios`.
      *
      * @param  int $userId
      * @return array{
      *   colocacao: int|null,
-     *   pontuacao_total: string,
+     *   pontuacao_total: int,
      *   data_fim_campanha: string,
      *   dias_restantes: int,
      *   dt_inicio_iso: string,
@@ -44,7 +55,7 @@ class RankingService
         // Subconsulta base: total de pontos por profissional no ciclo Top100
         $base = $this->buildBaseSomaPontos($inicio, $fim);
 
-        // 1) Tenta com window function (MySQL 8+/MariaDB com suporte)
+        // 1) Com window function
         try {
             $ranked = DB::query()
                 ->fromSub($base, 'r')
@@ -55,7 +66,7 @@ class RankingService
                 ->where('t.id_profissional', '=', $userId)
                 ->first();
         } catch (Throwable) {
-            // 2) Fallback portátil (sem window): conta quantos têm total maior e soma 1
+            // 2) Fallback sem window
             $base2 = $this->buildBaseSomaPontos($inicio, $fim);
 
             $rankedFallback = DB::query()
@@ -73,15 +84,17 @@ class RankingService
                 ->first();
         }
 
-        $total = $row?->total ?? 0.0;
-        $colocacao = $row?->colocacao ?? null;
+        $total      = $row?->total ?? 0.0;
+        $colocacao  = $row?->colocacao ?? null;
+        $totalInt   = $this->toIntPoints($total);
 
         $hoje = Carbon::today();
         $diasRestantes = $fim->isFuture() ? $hoje->diffInDays($fim) : 0;
 
         return [
             'colocacao'          => $colocacao !== null ? (int) $colocacao : null,
-            'pontuacao_total'    => number_format((float) $total, 2, ',', '.'),
+            // agora inteiro
+            'pontuacao_total'    => $totalInt,
             'data_fim_campanha'  => $fim->format('d/m/Y'),
             'dias_restantes'     => $diasRestantes,
             'dt_inicio_iso'      => $inicio->toDateString(),
@@ -91,8 +104,7 @@ class RankingService
     }
 
     /**
-     * Constrói a subconsulta base com a soma de pontos por profissional,
-     * filtrando por status e período.
+     * Constrói a subconsulta base com a soma de pontos por profissional.
      *
      * @param  Carbon $inicio
      * @param  Carbon $fim
@@ -113,9 +125,8 @@ class RankingService
 
     /**
      * Determina a janela atual do Top100.
-     * Regra: se mês >= 8 (ago), ciclo = ano atual/ano+1; senão = ano-1/ano.
      *
-     * @return array{Carbon, Carbon, string} [inicio, fim, label]
+     * @return array{Carbon, Carbon, string}
      */
     private function resolverJanelaTop100(): array
     {
@@ -140,7 +151,7 @@ class RankingService
      *
      * @param  \Illuminate\Http\Request $request
      * @return array{
-     *   premio: array{id:int|string,titulo:string,dt_inicio:string,dt_fim:string,pontos:float|int,_virtual?:bool,_tipo?:string,_ano?:int},
+     *   premio: array{id:int|string,titulo:string,dt_inicio:string,dt_fim:string,pontos:int,_virtual?:bool,_tipo?:string,_ano?:int},
      *   dados: array<int, object>
      * }
      */
@@ -150,25 +161,21 @@ class RankingService
         $escopo   = $request->input('escopo', 'geral'); // 'geral' | 'loja'
         $lojaId   = $request->filled('id_loja') ? (int) $request->input('id_loja') : null;
 
-        // Perfil do usuário (1=Admin, 3=Lojista, 5=Secretaria etc.)
         $user     = Auth::user();
         $perfilId = (int) ($user->perfil_id ?? 0);
         $isAdmin  = $perfilId === 1;
         $isLojista= $perfilId === 3;
 
-        // Regra: se escopo for 'geral', NUNCA enviar loja para a procedure
         if ($escopo === 'geral') {
             $lojaId = null;
         } else { // escopo === 'loja'
             if ($isLojista) {
-                // Lojista sempre usa a própria loja
                 $lojaId = (int) ($user->loja_id ?? 0) ?: null;
             } elseif ($isAdmin) {
                 if (!$lojaId) {
                     abort(422, 'Loja obrigatória no escopo por loja.');
                 }
             } else {
-                // Demais perfis que porventura usem escopo loja precisam de validação
                 if (!$lojaId) {
                     abort(422, 'Loja obrigatória no escopo por loja.');
                 }
@@ -189,6 +196,7 @@ class RankingService
                     'titulo'    => "Top 100 $ano",
                     'dt_inicio' => $dtInicio,
                     'dt_fim'    => $dtFim,
+                    // mantém 0 como inteiro
                     'pontos'    => 0,
                     '_virtual'  => true,
                     '_tipo'     => 'top100',
@@ -198,7 +206,6 @@ class RankingService
             ];
         }
 
-        // Fluxo normal (prêmio do banco)
         /** @var \App\Models\Premio $premio */
         $premio   = Premio::findOrFail((int) $idPremio);
         $isTop100 = $this->isTop100($premio);
@@ -208,7 +215,6 @@ class RankingService
             $dtFim    = $premio->dt_fim->format('Y-m-d');
             $dados    = DB::select('CALL sp_ranking_top100_periodo(?, ?, ?)', [$dtInicio, $dtFim, $lojaId]);
         } else {
-            // Procedure aceita (id_premio, id_loja|null)
             $dados    = DB::select('CALL sp_ranking_geral_profissionais(?, ?)', [(int) $premio->id, $lojaId]);
         }
 
@@ -218,7 +224,8 @@ class RankingService
                 'titulo'    => $premio->titulo,
                 'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
                 'dt_fim'    => $premio->dt_fim->format('Y-m-d'),
-                'pontos'    => $premio->pontos,
+                // agora inteiro
+                'pontos'    => $this->toIntPoints($premio->pontos),
             ],
             'dados' => $dados,
         ];
@@ -229,7 +236,7 @@ class RankingService
      *
      * @param  Request $request
      * @return array{
-     *   premio: array{id:int,titulo:string,dt_inicio:string,dt_fim:string,pontos:float|int},
+     *   premio: array{id:int,titulo:string,dt_inicio:string,dt_fim:string,pontos:int},
      *   atingiram?: array<int, array<string,mixed>>,
      *   nao_atingiram?: array<int, array<string,mixed>>,
      *   todos?: array<int, array<string,mixed>>
@@ -244,7 +251,6 @@ class RankingService
         $isTop100 = $this->isTop100($premio);
 
         if ($isTop100) {
-            // Busca única com todos os profissionais
             $linhas = DB::select('CALL sp_ranking_detalhado_top100(?)', [$premioId]);
             $todos = $this->consolidarPorProfissional($linhas);
 
@@ -254,19 +260,18 @@ class RankingService
                     'titulo'    => $premio->titulo,
                     'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
                     'dt_fim'    => $premio->dt_fim->format('Y-m-d'),
-                    'pontos'    => $premio->pontos,
+                    // inteiro
+                    'pontos'    => $this->toIntPoints($premio->pontos),
                 ],
                 'todos' => $todos,
             ];
         }
 
-        // 1. Profissionais que atingiram pelo menos uma faixa
-        $linhasAtingiram = DB::select('CALL sp_ranking_detalhado_por_loja(?)', [$premioId]);
-        $atingiram = $this->consolidarPorProfissional($linhasAtingiram);
+        $linhasAtingiram    = DB::select('CALL sp_ranking_detalhado_por_loja(?)', [$premioId]);
+        $atingiram          = $this->consolidarPorProfissional($linhasAtingiram);
 
-        // 2. Profissionais que não atingiram nenhuma faixa
         $linhasNaoAtingiram = DB::select('CALL sp_ranking_detalhado_nao_atingiram(?)', [$premioId]);
-        $naoAtingiram = $this->consolidarPorProfissional($linhasNaoAtingiram);
+        $naoAtingiram       = $this->consolidarPorProfissional($linhasNaoAtingiram);
 
         return [
             'premio' => [
@@ -274,7 +279,8 @@ class RankingService
                 'titulo'    => $premio->titulo,
                 'dt_inicio' => $premio->dt_inicio->format('Y-m-d'),
                 'dt_fim'    => $premio->dt_fim->format('Y-m-d'),
-                'pontos'    => $premio->pontos,
+                // inteiro
+                'pontos'    => $this->toIntPoints($premio->pontos),
             ],
             'atingiram'     => $atingiram,
             'nao_atingiram' => $naoAtingiram,
@@ -288,8 +294,8 @@ class RankingService
      * @return array<int, array{
      *   id_profissional:int,
      *   nome:string,
-     *   total:float,
-     *   pontos: array<int, array{loja:string,total:float}>
+     *   total:int,
+     *   pontos: array<int, array{loja:string,total:int}>
      * }>
      */
     private function consolidarPorProfissional(array $linhas): array
@@ -303,18 +309,20 @@ class RankingService
                 $consolidado[$id] = [
                     'id_profissional' => $id,
                     'nome'            => $linha->nome_profissional,
-                    'total'           => 0.0,
+                    // total inicia inteiro
+                    'total'           => 0,
                     'pontos'          => [],
                 ];
             }
 
-            $valor = (float) ($linha->total ?? 0);
+            $valorInt = $this->toIntPoints($linha->total ?? 0);
+
             $consolidado[$id]['pontos'][] = [
                 'loja'  => $linha->loja,
-                'total' => $valor,
+                'total' => $valorInt,
             ];
 
-            $consolidado[$id]['total'] += $valor;
+            $consolidado[$id]['total'] += $valorInt;
         }
 
         $resultado = array_values($consolidado);
@@ -323,12 +331,6 @@ class RankingService
         return $resultado;
     }
 
-    /**
-     * Determina se um prêmio é do tipo Top100 (sem faixas e com pontos > 0).
-     *
-     * @param  Premio $premio
-     * @return bool
-     */
     private function isTop100(Premio $premio): bool
     {
         return $premio->status === 1
@@ -339,7 +341,7 @@ class RankingService
     /**
      * Lista prêmios ATIVOS do banco para uso no ranking (sem virtuais).
      *
-     * @return array<int, array{id:int,titulo:string,dt_inicio:string,dt_fim:string,pontos:float|int,status:int}>
+     * @return array<int, array{id:int,titulo:string,dt_inicio:string,dt_fim:string,pontos:int,status:int}>
      */
     public function listarPremiosAtivosBase(): array
     {
@@ -356,7 +358,8 @@ class RankingService
                 'titulo'    => (string) $p->titulo,
                 'dt_inicio' => $p->dt_inicio->format('Y-m-d'),
                 'dt_fim'    => $p->dt_fim->format('Y-m-d'),
-                'pontos'    => (float) $p->pontos,
+                // inteiro
+                'pontos'    => $this->toIntPoints($p->pontos),
                 'status'    => (int) $p->status,
             ];
         })->values()->all();
@@ -365,21 +368,17 @@ class RankingService
     /**
      * Gera os 2 prêmios virtuais Top 100 (atual e próximo) — uso exclusivo no ranking.
      *
-     * Regra:
-     * - Se hoje ∈ [01/08/Y, 31/07/Y+1], retorna (Top 100 Y/Y+1, Top 100 Y+1/Y+2).
-     * - Após 31/07/Y+1, retorna (Top 100 Y+1/Y+2, Top 100 Y+2/Y+3).
-     *
      * @return array{0: array<string,mixed>, 1: array<string,mixed>}
      */
     public function buildTop100VirtualPrizes(): array
     {
-        $hoje = Carbon::today();
+        $hoje    = Carbon::today();
         $anoBase = $hoje->year - 1;
 
-        $atual = $hoje->month >= 8 ? $anoBase : $anoBase - 1;
+        $atual   = $hoje->month >= 8 ? $anoBase : $anoBase - 1;
         $proximo = $atual + 1;
 
-        $mk = static function (int $y): array {
+        $mk = function (int $y): array {
             $inicio = Carbon::create($y, 8)->toDateString();
             $fim    = Carbon::create($y + 1, 7, 31)->toDateString();
 
@@ -388,6 +387,7 @@ class RankingService
                 'titulo'    => "Top 100 $y/" . ($y + 1),
                 'dt_inicio' => $inicio,
                 'dt_fim'    => $fim,
+                // inteiro
                 'pontos'    => 0,
                 'status'    => 1,
                 '_virtual'  => true,
