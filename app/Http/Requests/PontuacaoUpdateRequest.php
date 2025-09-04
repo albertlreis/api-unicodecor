@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use Carbon\Carbon;
 
 /**
  * @phpstan-type PontuacaoUpdatePayload array{
@@ -18,27 +20,36 @@ class PontuacaoUpdateRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $user   = $this->user();
+        $perfil = (int)($user->id_perfil ?? 0);
+
+        if ($perfil === 1) {
+            return true;
+        }
+
+        $ponto = $this->route('ponto');
+        if (!$ponto) {
+            return false;
+        }
+
+        $today = Carbon::today(config('app.timezone'))->toDateString();
+        return (substr((string)$ponto->dt_referencia, 0, 10) === $today);
     }
 
     /**
-     * Normaliza inputs antes da validação.
-     * - valor: "1.234,56" -> "1234.56"
-     * - ids: "" -> null; "123" -> 123
-     * - dt_referencia: corta HH:mm:ss se vier (mantém Y-m-d)
+     * Normalizações e trava de data para não-admin.
      */
     protected function prepareForValidation(): void
     {
-        $data = $this->all();
+        $data   = $this->all();
+        $perfil = (int)($this->user()->id_perfil ?? 0);
 
-        // valor: aceita vírgula e milhares
         if (array_key_exists('valor', $data)) {
             $v = $data['valor'];
             if (is_string($v)) {
                 $vNorm = str_replace(['.', ' '], '', $v);
                 $vNorm = str_replace(',', '.', $vNorm);
                 if ($vNorm === '') {
-                    // evita falha em 'numeric' quando string vazia for enviada
                     unset($data['valor']);
                 } else {
                     $data['valor'] = $vNorm;
@@ -46,7 +57,6 @@ class PontuacaoUpdateRequest extends FormRequest
             }
         }
 
-        // ids: "" -> null; "123" -> 123
         foreach (['id_profissional','id_cliente','id_loja'] as $k) {
             if (array_key_exists($k, $data)) {
                 $val = $data[$k];
@@ -58,9 +68,12 @@ class PontuacaoUpdateRequest extends FormRequest
             }
         }
 
-        // dt_referencia: garante 'Y-m-d'
         if (array_key_exists('dt_referencia', $data) && is_string($data['dt_referencia'])) {
             $data['dt_referencia'] = substr($data['dt_referencia'], 0, 10);
+        }
+
+        if ($perfil !== 1) {
+            $data['dt_referencia'] = Carbon::today(config('app.timezone'))->toDateString();
         }
 
         $this->replace($data);
@@ -69,7 +82,10 @@ class PontuacaoUpdateRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        return [
+        $perfil = (int)($this->user()->id_perfil ?? 0);
+        $today  = Carbon::today(config('app.timezone'))->toDateString();
+
+        $rules = [
             'id_profissional' => ['sometimes','integer','exists:usuario,id'],
             'id_cliente'      => ['sometimes','nullable','integer','exists:usuario,id'],
             'id_loja'         => ['sometimes','nullable','integer','exists:lojas,id'],
@@ -77,6 +93,12 @@ class PontuacaoUpdateRequest extends FormRequest
             'orcamento'       => ['sometimes','nullable','string','max:255'],
             'dt_referencia'   => ['sometimes','date_format:Y-m-d'],
         ];
+
+        if ($perfil !== 1) {
+            $rules['dt_referencia'][] = Rule::in([$today]);
+        }
+
+        return $rules;
     }
 
     public function messages(): array
@@ -84,6 +106,7 @@ class PontuacaoUpdateRequest extends FormRequest
         return [
             'valor.numeric' => 'O campo valor deve ser numérico (ex.: 1234.56).',
             'dt_referencia.date_format' => 'A data deve estar no formato YYYY-MM-DD.',
+            'dt_referencia.in' => 'Para seu perfil, a data de referência deve ser a data de hoje.',
         ];
     }
 
