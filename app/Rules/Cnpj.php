@@ -6,11 +6,14 @@ use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 
 /**
- * Validação simples de CNPJ (dígitos + DV).
+ * Validação de CNPJ com pesos corretos (14 dígitos, rejeita repetidos, confere DV1 e DV2).
  * Aceita com ou sem máscara.
  */
 class Cnpj implements ValidationRule
 {
+    /**
+     * @inheritDoc
+     */
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
         $cnpj = preg_replace('/\D+/', '', (string) $value);
@@ -20,27 +23,29 @@ class Cnpj implements ValidationRule
             return;
         }
 
-        if (preg_match('/^(\\d)\\1{13}$/', $cnpj)) {
+        if (preg_match('/^(\d)\1{13}$/', $cnpj)) {
             $fail('O :attribute informado é inválido.');
             return;
         }
 
-        // Cálculo DV
-        $dv = static function ($cnpj, $posicoes) {
-            $soma = 0;
-            $pos = $posicoes;
-            for ($i = 0; $i < $posicoes - 1; $i++) {
-                $soma += $cnpj[$i] * $pos--;
-                if ($pos < 2) $pos = 9;
+        // Pesos oficiais de CNPJ
+        $weights1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+        $weights2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+        $calc = static function (string $base, array $weights): int {
+            $sum = 0;
+            foreach ($weights as $i => $w) {
+                $sum += ((int) $base[$i]) * $w;
             }
-            $resultado = $soma % 11;
-            return ($resultado < 2) ? 0 : 11 - $resultado;
+            $rest = $sum % 11;
+            return ($rest < 2) ? 0 : (11 - $rest);
         };
 
-        $calc1 = $dv($cnpj, 13);
-        $calc2 = $dv($cnpj, 14);
+        $base12 = substr($cnpj, 0, 12);
+        $dv1 = $calc($base12, $weights1);
+        $dv2 = $calc($base12 . $dv1, $weights2);
 
-        if ((int)$cnpj[12] !== $calc1 || (int)$cnpj[13] !== $calc2) {
+        if ($dv1 !== (int) $cnpj[12] || $dv2 !== (int) $cnpj[13]) {
             $fail('O :attribute informado é inválido.');
         }
     }
