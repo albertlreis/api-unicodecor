@@ -67,7 +67,7 @@ class RateioPorLojaResource extends JsonResource
             'total_geral'       => (float) $this->total_geral,
             'nome_faixa'        => $this->nome_faixa !== null ? (string)$this->nome_faixa : null,
             'vl_viagem'         => (float) ($this->vl_viagem ?? 0),
-            'valor_vendido'     => (float) $this->valor_vendido,
+            'valor_vendido'     => (int) $this->valor_vendido,
             'percentual'        => (float) $this->percentual,
             'valor_a_pagar'     => (float) $this->valor_a_pagar,
         ];

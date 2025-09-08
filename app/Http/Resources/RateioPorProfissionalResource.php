@@ -71,7 +71,7 @@ class RateioPorProfissionalResource extends JsonResource
             'vl_viagem'       => (float) ($this->vl_viagem ?? 0),
             'loja'            => (string)$this->loja,
             'id_loja'         => (int)   $this->id_loja,
-            'valor_vendido'   => (float) $this->valor_vendido,
+            'valor_vendido'   => (int) $this->valor_vendido,
             'percentual'      => (float) $this->percentual,
             'valor_a_pagar'   => (float) $this->valor_a_pagar,
         ];
