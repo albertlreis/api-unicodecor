@@ -141,20 +141,36 @@ class UsuarioController extends Controller
      */
     public function administrativos(Request $request): JsonResponse
     {
+        $auth = auth()->user();
+
         $request->validate([
-            'id_perfil' => ['nullable', 'integer', Rule::in([1, 3, 4, 5])],
+            'id_perfil' => ['nullable', 'integer', Rule::in([1, 3, 4, 5, 7])],
             'q'         => ['nullable', 'string', 'max:150'],
             'status'    => ['nullable', Rule::in([0, 1])],
         ]);
 
-        $adminPerfis = [1, 3, 4, 5];
-        $perfilId    = $request->integer('id_perfil');
+        $perfilIdReq = $request->integer('id_perfil');
         $q           = $request->string('q')->toString();
         $status      = $request->has('status') ? (int) $request->input('status') : null;
 
+        $allowedPerfis = [1, 3, 4, 5, 7];
+
+        // Se não for dev, remove 7 de qualquer cenário e bloqueia filtro explícito 7
+        if ((int)$auth->id_perfil !== 7) {
+            if ($perfilIdReq === 7) {
+                return response()->json([
+                    'sucesso'  => false,
+                    'mensagem' => 'Acesso negado ao perfil Desenvolvedor.',
+                ], 403);
+            }
+            $visiblePerfis = [1, 3, 4, 5];
+        } else {
+            $visiblePerfis = $allowedPerfis;
+        }
+
         $query = Usuario::query()
-            ->when($perfilId, fn($q2) => $q2->where('id_perfil', $perfilId))
-            ->when(!$perfilId, fn($q2) => $q2->whereIn('id_perfil', $adminPerfis))
+            ->when($perfilIdReq, fn($q2) => $q2->where('id_perfil', $perfilIdReq))
+            ->when(!$perfilIdReq, fn($q2) => $q2->whereIn('id_perfil', $visiblePerfis))
             ->when($status !== null, fn($q2) => $q2->where('status', $status))
             ->when($q, function ($q2) use ($q) {
                 $like = "%{$q}%";
@@ -164,10 +180,14 @@ class UsuarioController extends Controller
                 });
             });
 
-        // Opcional: respeitar escopo de visibilidade se existir
-        $user = auth()->user();
+        // Respeita escopo se existir
         if (method_exists(Usuario::class, 'scopeVisiveisParaUsuario')) {
-            $query->visiveisParaUsuario($user);
+            $query->visiveisParaUsuario($auth);
+        }
+
+        // Se não for dev, garante que não retorna devs nem por acidente
+        if ((int)$auth->id_perfil !== 7) {
+            $query->where('id_perfil', '!=', 7);
         }
 
         $dados = $query

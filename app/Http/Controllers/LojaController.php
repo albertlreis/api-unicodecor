@@ -127,7 +127,7 @@ class LojaController extends Controller
             'content-length' => request()->headers->get('content-length'),
             'method' => request()->method(),
         ]);
-        
+
         try {
             $validated = $request->validated();
 
