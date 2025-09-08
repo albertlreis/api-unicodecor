@@ -99,8 +99,7 @@ class EmpreendimentoService
         $ext = $file->getClientOriginalExtension() ?: $file->extension();
         $name = Str::uuid()->toString() . ($ext ? ('.' . strtolower($ext)) : '');
 
-        // Diretorio: empreendimentos/AAAA/MM
-        $dir = 'empreendimentos/' . now()->format('Y/m');
+        $dir = 'empreendimentos';
 
         return $file->storeAs($dir, $name, ['disk' => 'public']);
     }

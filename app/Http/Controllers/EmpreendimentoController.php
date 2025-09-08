@@ -35,7 +35,7 @@ class EmpreendimentoController extends Controller
     public function index(Request $request): ResourceCollection
     {
         $q              = (string) $request->query('q', '');
-        $statusFilter   = $request->query('status');    // 'all' | -1 | 0 | 1 | null
+        $statusFilter   = $request->query('status'); // 'all' | -1 | 0 | 1 | null
         $idConstrutoras = $request->query('idConstrutoras');
         $perPage        = $request->integer('per_page') ?: 15;
         $all            = $request->boolean('all', false);
@@ -45,19 +45,28 @@ class EmpreendimentoController extends Controller
             ->when($q !== '', fn ($qb) => $qb->where('nome', 'like', "%{$q}%"))
             ->when($idConstrutoras, fn ($qb) => $qb->where('idConstrutoras', (int) $idConstrutoras));
 
-        // ===== Regras de status aplicadas EM AMBOS (empreendimento e construtora) =====
+        // Normaliza se é um status específico (-1, 0 ou 1)
+        $isSpecificStatus = in_array((string)$statusFilter, ['-1','0','1'], true)
+            || in_array($statusFilter, [-1,0,1], true);
+
         if ($statusFilter === 'all') {
-            // sem filtro de status
-        } elseif ($statusFilter === '-1' || $statusFilter === -1 || $statusFilter === '0' || $statusFilter === 0 || $statusFilter === '1' || $statusFilter === 1) {
+            // Sem filtro por status do EMPREENDIMENTO,
+            // mas ainda assim evitamos construtoras deletadas (>= 0).
+            $query->whereHas('construtora', fn($q) => $q->where('status', '>=', 0));
+        } elseif ($isSpecificStatus) {
             $s = (int) $statusFilter;
-            $query->where('status', $s)
-                ->whereHas('construtora', fn($q) => $q->where('status', $s));
+
+            // Filtra APENAS pelo status do EMPREENDIMENTO
+            $query->where('status', $s);
+
+            // Para a CONSTRUTORA, não amarramos ao mesmo status.
+            // Regra: excluir somente deletadas (status >= 0).
+            $query->whereHas('construtora', fn($q) => $q->where('status', '>=', 0));
         } else {
             // Padrão: excluir excluídos (>= 0) em ambos
             $query->where('status', '>=', 0)
                 ->whereHas('construtora', fn($q) => $q->where('status', '>=', 0));
         }
-        // ============================================================================
 
         $query->orderBy('nome');
 
