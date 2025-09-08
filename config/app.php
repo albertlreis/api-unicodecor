@@ -59,7 +59,7 @@ return [
 
     'asset_url' => env('ASSET_URL'),
 
-    'reset_password_url' => env('RESET_PASSWORD_URL', 'unicodecor://reset-password'),
+    'reset_password_url' => env('RESET_PASSWORD_URL', env('APP_URL').'/reset-password'),
 
     /*
     |--------------------------------------------------------------------------

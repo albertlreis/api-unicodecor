@@ -13,6 +13,9 @@ use Illuminate\Http\Request;
  */
 class PasswordResetController extends Controller
 {
+    /**
+     * @param \App\Services\Auth\PasswordResetService $service
+     */
     public function __construct(
         private readonly PasswordResetService $service
     ) {}

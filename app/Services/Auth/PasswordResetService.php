@@ -15,8 +15,11 @@ use Illuminate\Support\Facades\Mail;
 class PasswordResetService
 {
     /**
-     * Gera token e envia e-mail com link.
+     * Gera token e envia e-mail com link de redefinição.
      *
+     * @param string $email E-mail do usuário (válido e ativo).
+     * @param string $appResetBaseUrl Base da URL do app web para redefinição (ex.: https://app.momentounicodecor.com.br/reset-password).
+     * @return void
      * @throws \Throwable
      */
     public function sendResetLink(string $email, string $appResetBaseUrl): void
