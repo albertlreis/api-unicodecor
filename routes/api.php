@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AppVersionController;
 use App\Http\Controllers\ClienteController;
 use App\Http\Controllers\ConstrutorasController;
 use App\Http\Controllers\EmpreendimentoController;
@@ -29,6 +30,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
 
     Route::get('/me/premios', [MePremiosController::class, 'index']);
+
+    Route::get('/app/version', [AppVersionController::class, 'show']);
 
     // Pontuações
     Route::get('/pontuacoes', [PontuacaoController::class, 'index']);
