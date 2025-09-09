@@ -6,11 +6,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
+/**
+ * @property int         $id
+ * @property int|null    $id_loja
+ * @property int         $status   1=Ativo, 0=Inativo
+ */
 class Usuario extends Authenticatable
 {
     use HasApiTokens;
 
     protected $table = 'usuario';
+
+    protected $fillable = [
+        'id_perfil','id_loja','nome','cpf','profissao','area_atuacao',
+        'endereco','complemento','bairro','cep','id_estado','id_cidade',
+        'site','email','fone','fax','cel','dt_nasc','reg_crea','reg_abd',
+        'login','senha','acesso','status',
+    ];
 
     protected $primaryKey = 'id';
 

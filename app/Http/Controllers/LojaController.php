@@ -197,8 +197,19 @@ class LojaController extends Controller
      */
     public function alterarStatus(Request $request, Loja $loja): JsonResponse
     {
-        $validated = $request->validate(['status' => ['required', 'integer', 'in:0,1']]);
-        $loja->update(['status' => (int) $validated['status']]);
-        return response()->json(new LojaResource($loja));
+        $validated = $request->validate([
+            'status' => ['required', 'integer', 'in:0,1'],
+        ]);
+
+        try {
+            $atualizada = $this->service->alterarStatus($loja, (int) $validated['status']);
+            return response()->json(new LojaResource($atualizada));
+        } catch (Throwable $e) {
+            report($e);
+            $msg = app()->environment('production')
+                ? 'Falha ao alterar status da loja.'
+                : ('Falha ao alterar status da loja: ' . $e->getMessage());
+            return response()->json(['message' => $msg], 422);
+        }
     }
 }

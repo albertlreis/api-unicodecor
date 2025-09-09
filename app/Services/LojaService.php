@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\Loja;
+use App\Models\Usuario;
 use App\Repositories\LojaRepository;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -96,6 +98,37 @@ class LojaService
         }
 
         return $this->repo->update($loja, $data);
+    }
+
+    /**
+     * Altera o status da loja e, caso seja inativação (0),
+     * inativa também os usuários vinculados à loja.
+     *
+     * @param  Loja  $loja   Instância da loja alvo.
+     * @param  int   $status 0=Inativa, 1=Ativa.
+     * @return Loja          Instância atualizada.
+     */
+    public function alterarStatus(Loja $loja, int $status): Loja
+    {
+        return DB::transaction(function () use ($loja, $status) {
+            // Atualiza a loja
+            $loja->update(['status' => $status]);
+
+            // Se INATIVANDO a loja, inativa todos os usuários da loja que ainda estão ativos
+            if ($status === 0) {
+                $afetados = Usuario::query()
+                    ->where('id_loja', $loja->id)
+                    ->where('status', 1)
+                    ->update(['status' => 0]);
+
+                logger()->info('LojaService.alterarStatus: usuários inativados por inativação de loja', [
+                    'loja_id'  => $loja->id,
+                    'afetados' => $afetados,
+                ]);
+            }
+
+            return $loja->refresh();
+        });
     }
 
     /**
