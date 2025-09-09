@@ -110,17 +110,20 @@ class RankingService
      * @param  Carbon $fim
      * @return \Illuminate\Database\Query\Builder
      */
-    private function buildBaseSomaPontos(Carbon $inicio, Carbon $fim): Builder
+    private function buildBaseSomaPontos(Carbon $inicio, Carbon $fim, ?int $lojaId = null): Builder
     {
         return DB::table('usuario as u')
-            ->leftJoin('pontos as p', function ($join) use ($inicio, $fim) {
+            ->leftJoin('pontos as p', function ($join) use ($inicio, $fim, $lojaId) {
                 $join->on('p.id_profissional', '=', 'u.id')
-                    ->where('p.status', '=', 1)
+                    ->where('p.status', 1)
                     ->whereBetween('p.dt_referencia', [$inicio->toDateString(), $fim->toDateString()]);
+                if ($lojaId) {
+                    $join->whereRaw('COALESCE(p.id_loja, u.id_loja) = ?', [$lojaId]);
+                }
             })
-            ->where('u.id_perfil', '=', 2) // perfil Profissional
-            ->groupBy('u.id')
-            ->selectRaw('u.id AS id_profissional, COALESCE(SUM(p.valor), 0) AS total');
+            ->where('u.id_perfil', 2) // Profissional
+            ->groupBy('u.id', 'u.nome')
+            ->selectRaw('u.id AS id_profissional, u.nome AS nome_profissional, COALESCE(SUM(p.valor), 0) AS total');
     }
 
     /**
@@ -398,4 +401,304 @@ class RankingService
 
         return [$mk($atual), $mk($proximo)];
     }
+
+    /** Resolve intervalo p/ período v2. @return array{inicio:Carbon,fim:Carbon,tipo:string,rotulo:string} */
+    private function resolverJanelaPeriodoV2(string $periodo): array
+    {
+        $hoje = Carbon::today();
+
+        if ($periodo === 'ano') {
+            $inicio = Carbon::create($hoje->year, 1, 1)->startOfDay();
+            $fim    = Carbon::create($hoje->year, 12, 31)->endOfDay();
+            return ['inicio'=>$inicio,'fim'=>$fim,'tipo'=>'ano','rotulo'=>strval($hoje->year)];
+        }
+
+        // Top100: 01/08/YY -> 31/07/YY+1
+        $baseAno = $hoje->month >= 8 ? $hoje->year : $hoje->year - 1;
+        if ($periodo === 'top100_anterior') $baseAno -= 1;
+        $inicio = Carbon::create($baseAno, 8, 1)->startOfDay();
+        $fim    = Carbon::create($baseAno + 1, 7, 31)->endOfDay();
+
+        return ['inicio'=>$inicio,'fim'=>$fim,'tipo'=>'top100','rotulo'=>sprintf('%d/%d',$baseAno,$baseAno+1)];
+    }
+
+    /**
+     * Enquadra o profissional em UMA campanha anual (entre as 3), baseada nas faixas.
+     * Critério: maior faixa cujo pontos_min <= total <= pontos_max (ou pontos_max NULL).
+     * Retorna [premio_id,titulo,faixaDescricao|null] ou null se não enquadrar.
+     *
+     * @param array<int, array{id:int,titulo:string}> $campanhas
+     */
+    private function enquadrarEmCampanhaAnual(int $totalInt, array $campanhas): ?array
+    {
+        if (empty($campanhas)) return null;
+
+        // Busca faixas dos prêmios anuais em 1 query
+        $premioIds = array_column($campanhas, 'id');
+        $faixas = DB::table('premio_faixas')
+            ->whereIn('id_premio', $premioIds)
+            ->orderBy('pontos_min', 'desc')
+            ->get(['id_premio','descricao','pontos_min','pontos_max']);
+
+        $melhor = null;
+        foreach ($faixas as $f) {
+            $min = (int) round((float) $f->pontos_min, 0, PHP_ROUND_HALF_UP);
+            $max = is_null($f->pontos_max) ? null : (int) round((float) $f->pontos_max, 0, PHP_ROUND_HALF_UP);
+            $ok  = $totalInt >= $min && ($max === null || $totalInt <= $max);
+            if ($ok) {
+                $prem = array_values(array_filter($campanhas, fn($c) => $c['id'] === $f->id_premio))[0] ?? null;
+                if ($prem) {
+                    $melhor = [
+                        'premio_id' => $prem['id'],
+                        'premio_titulo' => $prem['titulo'],
+                        'faixa' => (string) $f->descricao,
+                    ];
+                    break; // como ordenamos por pontos_min desc, o primeiro que bater é o melhor
+                }
+            }
+        }
+        return $melhor;
+    }
+
+    /**
+     * v2: Lista o ranking agrupado por campanha/top100/loja, com colocação (dense rank) reiniciando em 1 dentro de cada grupo.
+     *
+     * Regras:
+     * - Lojista (perfil 3): sempre escopo 'loja', força id_loja do usuário, retorna um único grupo "loja"
+     *   (sem campanhas) com pontuação e colocação por loja.
+     * - Admin/Secretaria: escolhem escopo ('geral' | 'loja') e período ('ano' | 'top100_atual' | 'top100_anterior').
+     *   Para 'ano', os profissionais são enquadrados em UMA campanha anual (faixas) e cada campanha vira um grupo.
+     *   Para 'top100_*', retorna grupo único "Top 100".
+     *
+     * Saída:
+     * [
+     *   'meta' => ['escopo'=>string,'dt_inicio'=>YYYY-MM-DD,'dt_fim'=>YYYY-MM-DD,'periodo'=>string|null],
+     *   'campanhas' => [
+     *     [
+     *       'id' => int|string,
+     *       'titulo' => string,
+     *       'dt_inicio' => YYYY-MM-DD,
+     *       'dt_fim' => YYYY-MM-DD,
+     *       'tipo' => 'loja'|'campanha'|'top100',
+     *       'profissionais' => [
+     *         [
+     *           'id_profissional' => int,
+     *           'nome_profissional' => string,
+     *           'pontuacao' => int,
+     *           'faixa' => ?string,
+     *           'campanha' => ?['id'=>int,'titulo'=>string],
+     *           'colocacao' => int  // dense rank começando em 1 dentro do grupo
+     *         ], ...
+     *       ]
+     *     ], ...
+     *   ]
+     * ]
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return array<string,mixed>
+     */
+    public function listarV2(Request $request): array
+    {
+        $escopo = $request->string('escopo')->toString();
+
+        $user      = Auth::user();
+        $perfilId  = (int) ($user->id_perfil ?? 0);
+        $isAdmin   = $perfilId === 1;
+        $isLojista = $perfilId === 3;
+
+        if ($isLojista) {
+            $inicio  = Carbon::parse($request->input('data_inicio'));
+            $fim     = Carbon::parse($request->input('data_fim'))->endOfDay();
+            $periodo = null;
+        } else {
+            $periodo = $request->string('periodo')->toString() ?: 'ano';
+            ['inicio' => $inicio, 'fim' => $fim] = $this->resolverJanelaPeriodoV2($periodo);
+
+            if ($escopo === 'loja' && $request->filled('data_inicio') && $request->filled('data_fim')) {
+                $inicio  = Carbon::parse($request->input('data_inicio'));
+                $fim     = Carbon::parse($request->input('data_fim'))->endOfDay();
+                $periodo = null; // não faz sentido exibir período quando datas manuais foram escolhidas
+            }
+        }
+
+        $lojaId = null;
+        if ($escopo === 'loja') {
+            $lojaId = $request->filled('id_loja') ? (int) $request->input('id_loja') : null;
+        }
+        if ($isLojista) {
+            $escopo = 'loja';
+            $lojaId = $request->filled('id_loja') ? (int) $request->input('id_loja') : $lojaId;
+        }
+
+        $base = $this->buildBaseSomaPontos($inicio, $fim, $lojaId);
+        $rows = DB::query()
+            ->fromSub($base, 'b')
+            ->select('*')
+            ->orderByDesc('total')
+            ->orderBy('id_profissional')
+            ->get();
+
+        $profissionais = [];
+        foreach ($rows as $r) {
+            $profissionais[] = [
+                'id_profissional'   => (int) $r->id_profissional,
+                'nome_profissional' => (string) $r->nome_profissional,
+                'pontuacao'         => $this->toIntPoints($r->total),
+                'faixa'             => null,
+                'campanha'          => null,
+                'colocacao'         => null,
+            ];
+        }
+
+        $profissionais = array_values(array_filter($profissionais, static fn ($p) => (int)($p['pontuacao'] ?? 0) > 0));
+
+        if ($isLojista) {
+            usort(
+                $profissionais,
+                fn ($a, $b) => ($b['pontuacao'] <=> $a['pontuacao'])
+                    ?: ($a['id_profissional'] <=> $b['id_profissional'])
+            );
+            $this->applyDenseRank($profissionais);
+
+            return [
+                'meta' => [
+                    'escopo'    => $escopo,
+                    'dt_inicio' => $inicio->toDateString(),
+                    'dt_fim'    => $fim->toDateString(),
+                    'periodo'   => null,
+                ],
+                'campanhas' => [[
+                    'id'         => 'loja',
+                    'titulo'     => 'Ranking da loja',
+                    'dt_inicio'  => $inicio->toDateString(),
+                    'dt_fim'     => $fim->toDateString(),
+                    'tipo'       => 'loja',
+                    'profissionais' => $profissionais,
+                ]],
+            ];
+        }
+
+        $campanhasOut = [];
+
+        if ($periodo && str_starts_with($periodo, 'top100')) {
+            usort(
+                $profissionais,
+                fn ($a, $b) => ($b['pontuacao'] <=> $a['pontuacao'])
+                    ?: ($a['id_profissional'] <=> $b['id_profissional'])
+            );
+            $this->applyDenseRank($profissionais);
+
+            $campanhasOut[] = [
+                'id'         => 'top100',
+                'titulo'     => 'Top 100',
+                'dt_inicio'  => $inicio->toDateString(),
+                'dt_fim'     => $fim->toDateString(),
+                'tipo'       => 'top100',
+                'profissionais' => $profissionais,
+            ];
+        } else {
+            $ano = $inicio->year;
+
+            $premiosAnuais = Premio::query()
+                ->whereYear('dt_inicio', '=', $ano)
+                ->whereYear('dt_fim', '=', $ano)
+                ->where('status', 1)
+                ->orderBy('id')
+                ->get(['id', 'titulo', 'dt_inicio', 'dt_fim']);
+
+            $campBase = $premiosAnuais->map(fn (Premio $p) => [
+                'id'           => (int) $p->id,
+                'titulo'       => (string) $p->titulo,
+                'dt_inicio'    => $p->dt_inicio->format('Y-m-d'),
+                'dt_fim'       => $p->dt_fim->format('Y-m-d'),
+                'tipo'         => 'campanha',
+                'profissionais'=> [],
+            ])->values()->all();
+
+            if ($periodo === null && $escopo === 'loja') {
+                usort(
+                    $profissionais,
+                    fn ($a, $b) => ($b['pontuacao'] <=> $a['pontuacao'])
+                        ?: ($a['id_profissional'] <=> $b['id_profissional'])
+                );
+                $this->applyDenseRank($profissionais);
+
+                $campanhasOut[] = [
+                    'id'            => 'loja',
+                    'titulo'        => 'Ranking da loja',
+                    'dt_inicio'     => $inicio->toDateString(),
+                    'dt_fim'        => $fim->toDateString(),
+                    'tipo'          => 'loja',
+                    'profissionais' => $profissionais,
+                ];
+            } else {
+                $campanhasSlim = array_map(fn ($c) => ['id' => $c['id'], 'titulo' => $c['titulo']], $campBase);
+                foreach ($profissionais as &$p) {
+                    $enq = $this->enquadrarEmCampanhaAnual($p['pontuacao'], $campanhasSlim);
+                    if ($enq) {
+                        $p['faixa']    = $enq['faixa'];
+                        $p['campanha'] = ['id' => $enq['premio_id'], 'titulo' => $enq['premio_titulo']];
+                    }
+                }
+                unset($p);
+
+                $map = [];
+                foreach ($campBase as $c) { $map[$c['id']] = $c; }
+                foreach ($profissionais as $p) {
+                    if ($p['campanha'] && isset($map[$p['campanha']['id']])) {
+                        $map[$p['campanha']['id']]['profissionais'][] = $p;
+                    }
+                }
+
+                foreach ($map as &$c) {
+                    // **garantia**: já tiramos pontuação 0; ainda assim filtramos por segurança
+                    $c['profissionais'] = array_values(array_filter($c['profissionais'], static fn ($p) => (int)($p['pontuacao'] ?? 0) > 0));
+                    usort(
+                        $c['profissionais'],
+                        fn ($a, $b) => ($b['pontuacao'] <=> $a['pontuacao'])
+                            ?: ($a['id_profissional'] <=> $b['id_profissional'])
+                    );
+                    $this->applyDenseRank($c['profissionais']);
+                }
+                unset($c);
+
+                $campanhasOut = array_values($map);
+            }
+        }
+
+        return [
+            'meta' => [
+                'escopo'    => $escopo,
+                'dt_inicio' => $inicio->toDateString(),
+                'dt_fim'    => $fim->toDateString(),
+                'periodo'   => $periodo,
+            ],
+            'campanhas' => $campanhasOut,
+        ];
+    }
+
+    /**
+     * Aplica dense rank (1-based) em um array de profissionais, modificando o campo 'colocacao'.
+     * O array deve estar ordenado por pontuacao DESC (e opcionalmente por id).
+     *
+     * @param array<int, array<string,mixed>> $items
+     * @return void
+     */
+    private function applyDenseRank(array &$items): void
+    {
+        $rank = 0;
+        $seq  = 0;
+        $prev = null;
+
+        foreach ($items as $i => $p) {
+            $seq++;
+            $curr = (int) ($p['pontuacao'] ?? 0);
+            if ($prev === null || $curr !== $prev) {
+                $rank = $seq;     // começa em 1
+                $prev = $curr;
+            }
+            $items[$i]['colocacao'] = $rank;
+        }
+    }
+
 }

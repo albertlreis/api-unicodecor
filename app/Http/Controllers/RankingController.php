@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\RankingRequest;
+use App\Http\Requests\RankingV2Request;
 use App\Http\Resources\RankingDetalhadoResource;
 use App\Http\Resources\RankingResource;
 use App\Http\Resources\Top100Resource;
@@ -74,5 +75,20 @@ class RankingController extends Controller
         $items = array_values(array_merge($ativos, [$t100Atual, $t100Prox]));
 
         return response()->json(['data' => $items]);
+    }
+
+    /**
+     * Ranking Geral v2
+     * - Admin/Secretaria: periodo = 'ano'|'top100_atual'|'top100_anterior'
+     * - Lojista: data_inicio / data_fim (default: 01/01/ano -> hoje no front)
+     */
+    public function indexV2(RankingV2Request $request, RankingService $service): JsonResponse
+    {
+        $out = $service->listarV2($request);
+
+        return response()->json([
+            'meta' => $out['meta'],
+            'campanhas' => $out['campanhas'],
+        ]);
     }
 }
