@@ -199,7 +199,7 @@ class GaleriaService
     }
 
     /**
-     * Monta URL pública para a imagem.
+     * Monta URL pública para a imagem, garantindo HTTPS em produção.
      *
      * @param  string $filename
      * @return string
@@ -207,8 +207,18 @@ class GaleriaService
     public function urlImagem(string $filename): string
     {
         if (str_starts_with($filename, 'http://') || str_starts_with($filename, 'https://')) {
+            // Se vier http, promove para https em produção
+            if (app()->environment('production')) {
+                return preg_replace('#^http://#', 'https://', $filename);
+            }
             return $filename;
         }
-        return asset("storage/galerias/$filename");
+
+        logger()->info("Imagem: ", [app()->environment('production')]);
+
+        // Em produção, gera sempre https; em local usa o asset normal
+        return app()->environment('production')
+            ? secure_asset("storage/galerias/{$filename}")
+            : asset("storage/galerias/{$filename}");
     }
 }
