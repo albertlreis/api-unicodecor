@@ -6,6 +6,7 @@ use App\Domain\Premios\Contracts\PremioRepository;
 use App\Models\Premio;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Database\Eloquent\Builder;
 
 class EloquentPremioRepository implements PremioRepository
 {
@@ -28,11 +29,14 @@ class EloquentPremioRepository implements PremioRepository
 
         $includeFaixas = (bool)($filtros['include_faixas'] ?? false);
 
+        /** @var array<string, string|null> $orderMap */
         $orderMap = [
-            'id'        => 'premios.id',
-            'titulo'    => 'premios.titulo',
-            'dt_inicio' => 'premios.dt_inicio',
-            'dt_fim'    => 'premios.dt_fim',
+            'id'         => 'premios.id',
+            'titulo'     => 'premios.titulo',
+            'dt_inicio'  => 'premios.dt_inicio',
+            'dt_fim'     => 'premios.dt_fim',
+            // especial: 'pontuacao' ordena por MAX(COALESCE(pf.pontos_max, pf.pontos_min))
+            'pontuacao'  => null,
         ];
         $orderColumn = $orderMap[$ordenarPor] ?? 'premios.dt_inicio';
         $orderDir    = $orden;
@@ -42,7 +46,8 @@ class EloquentPremioRepository implements PremioRepository
         $ativoExpr      = '(premios.status = 1 AND premios.dt_inicio <= ? AND premios.dt_fim >= ?)';
         $finalizadoExpr = '(premios.status = 1 AND premios.dt_fim < ?)';
 
-        $q = Premio::query();
+        /** @var Builder $q */
+        $q = Premio::query()->select('premios.*');
 
         if ($includeFaixas) {
             $q->with(['faixas' => static fn ($faixas) => $faixas->orderBy('pontos_min')]);
@@ -54,10 +59,8 @@ class EloquentPremioRepository implements PremioRepository
         if ($temStatusFiltro) {
             $statusInt = (int) $filtros['status'];
             if ($statusInt === 1) {
-                // ATIVOS: aplica regra completa (status+datas)
                 $q->whereRaw($ativoExpr, [$hoje, $hoje]);
             } else {
-                // INATIVOS: status=0 OU finalizados (status=1 e dt_fim < hoje)
                 $q->where(static function ($w) use ($finalizadoExpr, $hoje) {
                     $w->where('premios.status', 0)
                         ->orWhereRaw($finalizadoExpr, [$hoje]);
@@ -74,7 +77,6 @@ class EloquentPremioRepository implements PremioRepository
         if ($texto === '' && !empty($filtros['titulo'])) {
             $texto = trim((string)$filtros['titulo']);
         }
-
         if ($texto !== '') {
             $textoEsc = addcslashes($texto, '%_\\');
             $q->where(static function ($w) use ($textoEsc) {
@@ -90,13 +92,31 @@ class EloquentPremioRepository implements PremioRepository
             $q->ativosNoDia($hoje);
         }
 
-        // -------- ordenação ----------
-        if (!$temStatusFiltro && !$somenteAtivas) {
-            // "Todos": ATIVOS primeiro, depois título
-            $q->orderByRaw($ativoExpr . ' DESC', [$hoje, $hoje])
-                ->orderBy('premios.titulo', 'asc');
+// -------- ordenação ----------
+        if ($ordenarPor === 'pontuacao') {
+            // Calcula a maior pontuação de cada prêmio (pontos_max quando existe, senão pontos_min)
+            $q->selectRaw(
+                '(SELECT MAX(COALESCE(pf2.pontos_max, pf2.pontos_min))
+           FROM premio_faixas pf2
+          WHERE pf2.id_premio = premios.id) AS max_pontuacao'
+            );
+
+            // Empurra NULLs para o fim (MySQL/PG compatível) e ordena pela direção solicitada
+            if ($orderDir === 'desc') {
+                $q->orderByRaw('(max_pontuacao IS NULL) ASC') // false(0) primeiro, NULL por último
+                ->orderBy('max_pontuacao', 'desc');
+            } else {
+                $q->orderByRaw('(max_pontuacao IS NULL) ASC')
+                    ->orderBy('max_pontuacao', 'asc');
+            }
         } else {
-            $q->orderBy($orderColumn, $orderDir);
+            if (!$temStatusFiltro && !$somenteAtivas) {
+                // "Todos": ATIVOS primeiro, depois título
+                $q->orderByRaw($ativoExpr . ' DESC', [$hoje, $hoje])
+                    ->orderBy('premios.titulo', 'asc');
+            } else {
+                $q->orderBy($orderColumn, $orderDir);
+            }
         }
 
         // -------- paginação ----------

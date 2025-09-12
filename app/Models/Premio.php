@@ -19,7 +19,6 @@ use Illuminate\Support\Str;
  * @property string|null         $regulamento
  * @property string|null         $site
  * @property string|null         $banner
- * @property float|null          $pontos
  * @property float|null          $valor_viagem
  * @property Carbon|string|null  $dt_inicio
  * @property Carbon|string|null  $dt_fim
@@ -49,7 +48,6 @@ class Premio extends Model
         'regulamento',
         'site',
         'banner',
-        'pontos',
         'dt_inicio',
         'dt_fim',
         'dt_cadastro',

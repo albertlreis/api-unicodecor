@@ -10,7 +10,7 @@ use Illuminate\Foundation\Http\FormRequest;
  *   titulo?: string|null,
  *   status?: int|null,
  *   somente_ativas?: bool|null,
- *   ordenar_por?: 'dt_inicio'|'dt_fim'|'titulo'|'id'|null,
+ *   ordenar_por?: 'dt_inicio'|'dt_fim'|'titulo'|'id'|'pontuacao'|null,
  *   orden?: 'asc'|'desc'|null,
  *   orderBy?: 'dt_inicio'|'dt_fim'|'titulo'|'id'|null,
  *   orderDir?: 'asc'|'desc'|null,
@@ -34,11 +34,11 @@ class PremioIndexRequest extends FormRequest
     {
         return [
             'q'               => ['nullable', 'string', 'max:200'],
-            'titulo'          => ['nullable', 'string', 'max:200'], // legado
+            'titulo'          => ['nullable', 'string', 'max:200'],
             'status'          => ['nullable', 'integer', 'in:0,1'],
             'somente_ativas'  => ['nullable', 'boolean'],
 
-            'ordenar_por'     => ['nullable', 'in:dt_inicio,dt_fim,titulo,id'],
+            'ordenar_por'     => ['nullable', 'in:dt_inicio,dt_fim,titulo,id,pontuacao'],
             'orden'           => ['nullable', 'in:asc,desc'],
 
             'orderBy'         => ['nullable', 'in:dt_inicio,dt_fim,titulo,id'],
