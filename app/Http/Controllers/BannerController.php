@@ -2,133 +2,88 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\BannerRequest;
+use App\Http\Requests\BannerStoreRequest;
+use App\Http\Requests\BannerUpdateRequest;
 use App\Http\Resources\BannerResource;
 use App\Models\Banner;
 use App\Services\BannerService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 
-/**
- * @psalm-suppress PropertyNotSetInConstructor
- */
 class BannerController extends Controller
 {
-    public function __construct(
-        private readonly BannerService $service
-    ) {}
+    public function __construct(private readonly BannerService $service) {}
 
     /**
-     * GET /banners
-     * Listagem com filtros, ordenação e paginação.
+     * GET /banners (filtros + paginação)
      *
-     * Filtros suportados:
-     * - q: string (busca em título/descrição)
-     * - status: 0|1
-     * - sort: idBanners|titulo|status
-     * - order: asc|desc
-     * - per_page: int (1..100)
-     *
-     * @param  Request $request
-     * @return JsonResponse
+     * Retorna:
+     * {
+     *   "data": [...],
+     *   "links": {...},
+     *   "meta": {
+     *     "current_page": 1,
+     *     "last_page": 5,
+     *     "per_page": 15,
+     *     "total": 74,
+     *     ...
+     *   }
+     * }
      */
     public function index(Request $request): JsonResponse
     {
-        Log::info('GET /banners', ['query' => $request->query()]);
         $paginado = $this->service->listar($request->query());
 
-        return BannerResource::collection($paginado)
-            ->additional(['meta' => [
-                'current_page' => $paginado->currentPage(),
-                'per_page'     => $paginado->perPage(),
-                'total'        => $paginado->total(),
-            ]])
-            ->response();
+        // Deixe o Laravel montar links/meta (inclui last_page)
+        return BannerResource::collection($paginado)->response();
     }
 
-    /**
-     * GET /banners/{banner}
-     *
-     * @param  Banner $banner
-     * @return JsonResponse
-     */
+    /** GET /banners/ativos – lista apenas ativos (para slider da Home) */
+    public function ativos(Request $request): JsonResponse
+    {
+        $req = $request->merge(['status' => 1, 'per_page' => (int)($request->query('per_page', 50))]);
+        $paginado = $this->service->listar($req->query());
+
+        // Também mantém o meta padrão aqui
+        return BannerResource::collection($paginado)->response();
+    }
+
+    /** GET /banners/{banner} */
     public function show(Banner $banner): JsonResponse
     {
-        Log::info('GET /banners/{id}', ['id' => $banner->idBanners]);
         return (new BannerResource($banner))->response();
     }
 
-    /**
-     * POST /banners
-     *
-     * @param  BannerRequest $request
-     * @return JsonResponse
-     */
-    public function store(BannerRequest $request): JsonResponse
+    /** POST /banners (com upload) */
+    public function store(BannerStoreRequest $request): JsonResponse
     {
-        Log::info('POST /banners', ['payload' => $request->validated()]);
-        $banner = $this->service->criar($request->validated());
+        $payload = $request->validated();
+        $arquivo = $request->file('arquivo');
 
-        return (new BannerResource($banner))
-            ->response()
-            ->setStatusCode(201);
+        $banner = $this->service->criarComUpload($payload, $arquivo);
+
+        return (new BannerResource($banner))->response()->setStatusCode(201);
     }
 
-    /**
-     * PUT/PATCH /banners/{banner}
-     *
-     * @param  BannerRequest $request
-     * @param  Banner $banner
-     * @return JsonResponse
-     */
-    public function update(BannerRequest $request, Banner $banner): JsonResponse
+    /** PUT/PATCH /banners/{banner} (sem trocar imagem) */
+    public function update(BannerUpdateRequest $request, Banner $banner): JsonResponse
     {
-        Log::info('PUT/PATCH /banners/{id}', [
-            'id'      => $banner->idBanners,
-            'payload' => $request->validated()
-        ]);
-
         $banner = $this->service->atualizar($banner, $request->validated());
-
         return (new BannerResource($banner))->response();
     }
 
-    /**
-     * DELETE /banners/{banner}
-     *
-     * @param  Banner $banner
-     * @return JsonResponse
-     */
+    /** DELETE /banners/{banner} */
     public function destroy(Banner $banner): JsonResponse
     {
-        Log::warning('DELETE /banners/{id}', ['id' => $banner->idBanners]);
         $this->service->remover($banner);
-
         return response()->json([], 204);
     }
 
-    /**
-     * PATCH /banners/{banner}/status
-     * Corpo: { "status": true|false }
-     *
-     * @param  Request $request
-     * @param  Banner  $banner
-     * @return JsonResponse
-     */
+    /** PATCH /banners/{banner}/status */
     public function toggleStatus(Request $request, Banner $banner): JsonResponse
     {
-        $request->validate([
-            'status' => ['required', 'boolean']
-        ]);
-
-        Log::info('PATCH /banners/{id}/status', [
-            'id'     => $banner->idBanners,
-            'status' => $request->boolean('status')
-        ]);
-
+        $request->validate(['status' => ['required', 'boolean']]);
         $banner = $this->service->alterarStatus($banner, $request->boolean('status'));
-
         return (new BannerResource($banner))->response();
     }
 }

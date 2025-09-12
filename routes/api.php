@@ -48,10 +48,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::match(['put','patch'], '/premios/{premio}', [PremioController::class, 'update']);
 
     Route::get('/banners', [BannerController::class, 'index'])->name('banners.index');
+    Route::get('/banners/ativos', [BannerController::class, 'ativos'])->name('banners.ativos');
     Route::get('/banners/{banner}', [BannerController::class, 'show'])->name('banners.show');
     Route::post('/banners', [BannerController::class, 'store'])->name('banners.store');
     Route::put('/banners/{banner}', [BannerController::class, 'update'])->name('banners.update');
-    Route::patch('/banners/{banner}', [BannerController::class, 'update'])->name('banners.patch'); // opcional
+    Route::patch('/banners/{banner}', [BannerController::class, 'update'])->name('banners.patch');
     Route::delete('/banners/{banner}', [BannerController::class, 'destroy'])->name('banners.destroy');
     Route::patch('/banners/{banner}/status', [BannerController::class, 'toggleStatus'])->name('banners.toggleStatus');
 
