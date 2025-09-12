@@ -55,14 +55,30 @@ class PremioResource extends JsonResource
     }
 
     /**
-     * Força http em local e https em produção.
+     * Força o esquema (http/https) de acordo com o ambiente atual.
+     * - local  => http
+     * - outros => https
+     *
+     * @param  string $url
+     * @return string
      */
-    private function forceScheme(?string $url): ?string
+    private function forceScheme(string $url): string
     {
-        if (!$url) return null;
-        if (app()->environment('local')) {
-            return preg_replace('#^https://#', 'http://', $url);
+        $isLocal = app()->environment('local');
+
+        if ($isLocal) {
+            // Local sempre http
+            $url = preg_replace('~^https://~i', 'http://', $url);
+            if (!preg_match('~^https?://~i', $url)) {
+                $url = 'http://' . ltrim($url, '/');
+            }
+        } else {
+            // Produção/Staging sempre https
+            $url = preg_replace('~^http://~i', 'https://', $url);
+            if (!preg_match('~^https?://~i', $url)) {
+                $url = 'https://' . ltrim($url, '/');
+            }
         }
-        return preg_replace('#^http://#', 'https://', $url);
+        return $url;
     }
 }
