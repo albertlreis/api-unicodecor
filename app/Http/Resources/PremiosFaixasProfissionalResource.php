@@ -8,6 +8,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Resource de resposta para /me/premios (visão PROFISSIONAL).
@@ -80,17 +81,13 @@ class PremiosFaixasProfissionalResource extends JsonResource
             'pontuacao_total_formatado' => number_format($pontuacaoTotal, 0, ',', '.'),
             'dias_restantes'            => (int)($data['dias_restantes'] ?? 0),
 
-            // Campanha atual (normalizada p/ URLs do storage)
             'campanha'                  => $this->normalizeCampanha($data['campanha'] ?? null),
 
-            // Faixas (mantém estrutura)
             'faixa_atual'               => $this->normalizeFaixa($data['faixa_atual'] ?? null),
             'proxima_faixa'             => $this->normalizeFaixa($data['proxima_faixa'] ?? null),
 
-            // Listas
             'proximas_faixas'           => array_values($data['proximas_faixas'] ?? []),
 
-            // Proximas campanhas com banner/regulamento normalizados (mantendo mesmas chaves)
             'proximas_campanhas'        => array_values(
                 array_map(
                     fn ($c) => $this->normalizeCampanha($c) ?? $c,
@@ -118,7 +115,7 @@ class PremiosFaixasProfissionalResource extends JsonResource
                 'id'            => (int)($campanha['id'] ?? 0),
                 'titulo'        => $campanha['titulo'] ?? null,
                 'banner'        => $this->fileToStorageUrl($campanha['banner'] ?? null, Premio::BANNER_DIR),
-                'regulamento'   => $this->fileToStorageUrl($campanha['regulamento'] ?? null, Premio::REGULAMENTO_DIR),
+                'regulamento'   => $campanha['regulamento'],
                 'dt_inicio_iso' => $campanha['dt_inicio_iso'] ?? $this->toIso($campanha['dt_inicio_iso'] ?? null),
                 'dt_fim_iso'    => $campanha['dt_fim_iso'] ?? $this->toIso($campanha['dt_fim_iso'] ?? null),
                 'dt_inicio'     => $campanha['dt_inicio'] ?? null,
@@ -127,12 +124,11 @@ class PremiosFaixasProfissionalResource extends JsonResource
             ];
         }
 
-        // Eloquent Model
         return [
-            'id'            => (int)($campanha->id ?? 0),
+            'id'            => $campanha->id ?? 0,
             'titulo'        => $campanha->titulo ?? null,
             'banner'        => $this->fileToStorageUrl($campanha->banner ?? null, Premio::BANNER_DIR),
-            'regulamento'   => $this->fileToStorageUrl($campanha->regulamento ?? null, Premio::REGULAMENTO_DIR),
+            'regulamento'   => $campanha['regulamento'],
             'dt_inicio_iso' => self::toIso($campanha->dt_inicio ?? null),
             'dt_fim_iso'    => self::toIso($campanha->dt_fim ?? null),
             'dt_inicio'     => self::brDate($campanha->dt_inicio ?? null),
@@ -177,20 +173,20 @@ class PremiosFaixasProfissionalResource extends JsonResource
             ];
         }
 
-        $min = (int)($faixa->pontos_min ?? 0);
+        $min = $faixa->pontos_min ?? 0;
         $max = isset($faixa->pontos_max) ? ($faixa->pontos_max !== null ? (int)$faixa->pontos_max : null) : null;
-        $premioId = (int)($faixa->premio_id ?? $faixa->id_premio ?? 0);
+        $premioId = $faixa->premio_id ?? $faixa->id_premio ?? 0;
 
         return [
-            'id'                   => (int)($faixa->id ?? 0),
+            'id'                   => $faixa->id ?? 0,
             'descricao'            => $faixa->descricao ?? null,
             'pontos_min'           => $min,
             'pontos_min_formatado' => number_format($min, 0, ',', '.'),
             'pontos_max'           => $max,
             'pontos_max_formatado' => $max !== null ? number_format($max, 0, ',', '.') : null,
             'pontos_range'         => self::rangeText($min, $max),
-            'acompanhante'         => (bool)($faixa->acompanhante ?? false),
-            'acompanhante_texto'   => (bool)($faixa->acompanhante ?? false) ? 'Com acompanhante' : 'Somente profissional',
+            'acompanhante'         => $faixa->acompanhante ?? false,
+            'acompanhante_texto'   => $faixa->acompanhante ?? false ? 'Com acompanhante' : 'Somente profissional',
             'vl_viagem'            => isset($faixa->vl_viagem) ? ($faixa->vl_viagem !== null ? (float)$faixa->vl_viagem : null) : null,
             'vl_viagem_formatado'  => isset($faixa->vl_viagem) && $faixa->vl_viagem !== null
                 ? number_format((float)$faixa->vl_viagem, 2, ',', '.')
@@ -208,7 +204,7 @@ class PremiosFaixasProfissionalResource extends JsonResource
         if (!$date) return null;
         try {
             return Carbon::parse($date)->format('d/m/Y');
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }
@@ -218,7 +214,7 @@ class PremiosFaixasProfissionalResource extends JsonResource
         if (!$date) return null;
         try {
             return Carbon::parse($date)->toDateString(); // Y-m-d
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }

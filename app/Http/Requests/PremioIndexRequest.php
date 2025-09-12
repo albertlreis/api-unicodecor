@@ -6,15 +6,19 @@ use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * @phpstan-type Filtros array{
+ *   q?: string|null,
+ *   titulo?: string|null,
  *   status?: int|null,
  *   somente_ativas?: bool|null,
- *   titulo?: string|null,
- *   ordenar_por?: string|null,
+ *   ordenar_por?: 'dt_inicio'|'dt_fim'|'titulo'|'id'|null,
  *   orden?: 'asc'|'desc'|null,
+ *   orderBy?: 'dt_inicio'|'dt_fim'|'titulo'|'id'|null,
+ *   orderDir?: 'asc'|'desc'|null,
  *   page?: int|null,
  *   per_page?: int|null,
  *   include_faixas?: bool|null,
  *   data_base?: string|null,
+ *   incluir_enquadramento?: bool|null,
  *   ids?: array<int>|null
  * }
  */
@@ -29,15 +33,14 @@ class PremioIndexRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status'          => ['nullable', 'integer', 'in:0,1,2'],
+            'q'               => ['nullable', 'string', 'max:200'],
+            'titulo'          => ['nullable', 'string', 'max:200'], // legado
+            'status'          => ['nullable', 'integer', 'in:0,1'],
             'somente_ativas'  => ['nullable', 'boolean'],
-            'titulo'          => ['nullable', 'string', 'max:200'],
 
-            // nomes oficiais
             'ordenar_por'     => ['nullable', 'in:dt_inicio,dt_fim,titulo,id'],
             'orden'           => ['nullable', 'in:asc,desc'],
 
-            // aliases aceitos pelo front
             'orderBy'         => ['nullable', 'in:dt_inicio,dt_fim,titulo,id'],
             'orderDir'        => ['nullable', 'in:asc,desc'],
 
@@ -45,9 +48,10 @@ class PremioIndexRequest extends FormRequest
             'per_page'        => ['nullable', 'integer', 'min:1', 'max:100'],
             'include_faixas'  => ['nullable', 'boolean'],
             'data_base'       => ['nullable', 'date_format:Y-m-d'],
+            'incluir_enquadramento'=> ['nullable', 'boolean'],
+
             'ids'             => ['nullable', 'array'],
             'ids.*'           => ['integer', 'min:1'],
-            'incluir_enquadramento'=> ['nullable', 'boolean'],
         ];
     }
 
@@ -56,36 +60,49 @@ class PremioIndexRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        if ($this->has('incluir_enquadramento')) {
-            $raw = $this->input('incluir_enquadramento');
+        $bool = fn ($v) => filter_var($v, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
 
-            // Aceita 1/0, "1"/"0", "true"/"false", "on"/"off"
-            $casted = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $normStr = function ($v): ?string {
+            if ($v === null) return null;
+            $s = trim((string) $v);
+            return $s === '' ? null : $s;
+        };
 
-            // Se não der pra converter, mantém null para cair na rule nullable
-            $this->merge([
-                'incluir_enquadramento' => $casted,
-            ]);
+        $ordenar = $this->input('ordenar_por', $this->input('orderBy'));
+        $orden   = $this->input('orden',       $this->input('orderDir'));
+
+        $q       = $normStr($this->input('q'));
+        $titulo  = $normStr($this->input('titulo')); // legado
+
+        $page    = (int) ($this->input('page', 1));
+        $page    = $page >= 1 ? $page : 1;
+
+        $perPage = (int) ($this->input('per_page', 15));
+        if ($perPage < 1)   $perPage = 15;
+        if ($perPage > 100) $perPage = 100;
+
+        $somenteAtivas        = $bool($this->input('somente_ativas', false));
+        $includeFaixas        = $bool($this->input('include_faixas'));
+        $incluirEnquadramento = $bool($this->input('incluir_enquadramento'));
+
+        $status = $this->input('status');
+        if ($status !== null && $status !== '') {
+            $status = (int) $status;
+        } else {
+            $status = null;
         }
 
-        // aliases do front → nomes oficiais
-        $ordenar = $this->input('ordenar_por', $this->input('orderBy'));
-        $orden   = $this->input('orden', $this->input('orderDir'));
-
         $this->merge([
-            'ordenar_por'    => $ordenar ?? 'dt_inicio',
-            'orden'          => $orden   ?? 'asc',
-            // ⚠️ admin precisa ver tudo por padrão
-            'somente_ativas' => $this->toBoolean($this->input('somente_ativas', false)),
-            'include_faixas' => $this->toBoolean($this->input('include_faixas')),
-            'page'           => (int) $this->input('page', 1),
-            'per_page'       => (int) $this->input('per_page', 15),
+            'q'                    => $q,
+            'titulo'               => $titulo,
+            'status'               => $status,
+            'ordenar_por'          => $ordenar ?? 'dt_inicio',
+            'orden'                => in_array($orden, ['asc','desc'], true) ? $orden : 'asc',
+            'somente_ativas'       => $somenteAtivas,
+            'include_faixas'       => $includeFaixas,
+            'incluir_enquadramento'=> $incluirEnquadramento,
+            'page'                 => $page,
+            'per_page'             => $perPage,
         ]);
-    }
-
-    private function toBoolean(mixed $value): ?bool
-    {
-        if ($value === null) return null;
-        return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
     }
 }

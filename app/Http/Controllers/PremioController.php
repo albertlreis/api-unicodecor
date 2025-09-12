@@ -11,11 +11,9 @@ use App\Http\Requests\PremioUpdateRequest;
 use App\Http\Resources\PremioResource;
 use App\Models\Premio;
 use App\Models\PremioFaixa;
+use App\Services\PremioService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 /**
  * Controlador de prêmios/campanhas.
@@ -25,6 +23,7 @@ class PremioController extends Controller
     public function __construct(
         private readonly PremioRepository $premios,
         private readonly PremioFaixaResolver $resolver,
+        private readonly PremioService $service,
     ) {}
 
     /**
@@ -41,7 +40,6 @@ class PremioController extends Controller
 
         $paginator = $this->premios->listarPorFiltros($filtros);
 
-        // 🔎 Descobrir se devemos calcular o enquadramento do usuário
         $highlightPremioId = null;
         $diasRestantesEnquadrado = null;
 
@@ -50,11 +48,10 @@ class PremioController extends Controller
         $querEnquadramento = (bool) ($filtros['incluir_enquadramento'] ?? false);
 
         if ($querEnquadramento && $perfil === 2) {
-            // Reaproveita a lógica consolidada do resolver (sem expor /me/premios).
             $payload = $this->resolver->resolver(
                 usuarioId: (int)$user->id,
                 dataBase: $filtros['data_base'] ?? null,
-                incluirProximasFaixas: false,    // não precisamos dessas listas aqui
+                incluirProximasFaixas: false,
                 incluirProximasCampanhas: false
             );
 
@@ -101,42 +98,21 @@ class PremioController extends Controller
      * - status SEMPRE ativo (1)
      * - banner/regulamento por ANEXO (sem URL)
      * - faixas com valor por faixa
+     * @throws \Throwable
      */
     public function store(PremioStoreRequest $request): JsonResponse
     {
-        /** @var array<string,mixed> $data */
-        $data = $request->validated();
+        $payload = $request->validated();
+        $arquivo = $request->file('arquivo');
 
-        return DB::transaction(function () use ($request, $data) {
-            // Arquivos obrigatórios
-            $bannerFilename = $this->storeBanner($request);
-            $regFilename    = $this->storeRegulamento($request);
+        $premio = $this->service->criar($payload, $arquivo);
 
-            // Cria prêmio (status sempre ativo)
-            $premio = new Premio();
-            $premio->titulo     = $data['titulo'];
-            $premio->descricao  = $data['descricao'] ?? null;
-            $premio->regras     = $data['regras']    ?? null;
-            $premio->dt_inicio  = $data['dt_inicio'];
-            $premio->dt_fim     = $data['dt_fim'];
-            $premio->status     = 1;
-            $premio->banner     = $bannerFilename;
-            $premio->regulamento= $regFilename;
-            $premio->dt_cadastro= now();
 
-            $premio->save();
-
-            // Sincroniza faixas
-            $this->syncFaixas($premio, $data['faixas'] ?? []);
-
-            $premio->load('faixas');
-
-            return response()->json([
-                'sucesso'  => true,
-                'mensagem' => 'Prêmio criado com sucesso.',
-                'data'     => new PremioResource($premio),
-            ], 201);
-        });
+        return response()->json([
+            'sucesso'  => true,
+            'mensagem' => 'Prêmio criado com sucesso.',
+            'data'     => new PremioResource($premio),
+        ], 201);
     }
 
     /**
@@ -146,158 +122,19 @@ class PremioController extends Controller
      * - mantém o status existente (não alteramos aqui)
      * - troca arquivos apenas se enviados no request
      * - sincroniza faixas (upsert + remoção do que saiu)
+     * @throws \Throwable
      */
     public function update(PremioUpdateRequest $request, Premio $premio): JsonResponse
     {
-        /** @var array<string,mixed> $data */
-        $data = $request->validated();
+        $payload = $request->validated();
+        $arquivo = $request->file('arquivo');
+        $premio = $this->service->atualizar($premio, $payload, $arquivo);
 
-        return DB::transaction(function () use ($request, $data, $premio) {
-            // Atualiza campos básicos
-            $premio->titulo    = $data['titulo'];
-            $premio->descricao = $data['descricao'] ?? null;
-            $premio->regras    = $data['regras']    ?? null;
-            $premio->dt_inicio = $data['dt_inicio'];
-            $premio->dt_fim    = $data['dt_fim'];
-
-            // Substitui arquivos quando enviados
-            if ($request->hasFile('banner_file')) {
-                $this->deleteIfExists($premio->banner, Premio::BANNER_DIR);
-                $premio->banner = $this->storeBanner($request);
-            }
-            if ($request->hasFile('regulamento_file')) {
-                $this->deleteIfExists($premio->regulamento, Premio::REGULAMENTO_DIR);
-                $premio->regulamento = $this->storeRegulamento($request);
-            }
-
-            $premio->save();
-
-            // Sincroniza faixas
-            $this->syncFaixas($premio, $data['faixas'] ?? []);
-
-            $premio->load('faixas');
-
-            return response()->json([
-                'sucesso'  => true,
-                'mensagem' => 'Prêmio atualizado com sucesso.',
-                'data'     => new PremioResource($premio),
-            ]);
-        });
-    }
-
-    /**
-     * Salva o banner no disk 'public' e retorna APENAS o nome.ext salvo.
-     *
-     * @param  Request $request
-     * @return string
-     */
-    private function storeBanner(Request $request): string
-    {
-        /** @var \Illuminate\Http\UploadedFile $file */
-        $file = $request->file('banner_file');
-
-        $ext  = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'png');
-        $name = uniqid('banner_', true).'.'.$ext;
-
-        // salva em 'premios/banners/<nome.ext>'
-        $file->storeAs(Premio::BANNER_DIR, $name, ['disk' => 'public']);
-
-        return $name;
-    }
-
-    /**
-     * Salva o regulamento (PDF) no disk 'public' e retorna APENAS o nome.ext salvo.
-     *
-     * @param  Request $request
-     * @return string
-     */
-    private function storeRegulamento(Request $request): string
-    {
-        /** @var \Illuminate\Http\UploadedFile $file */
-        $file = $request->file('regulamento_file');
-
-        $ext  = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'pdf');
-        $name = uniqid('reg_', true).'.'.$ext;
-
-        // salva em 'premios/regulamentos/<nome.ext>'
-        $file->storeAs(Premio::REGULAMENTO_DIR, $name, ['disk' => 'public']);
-
-        return $name;
-    }
-
-    /**
-     * Remove arquivo anterior (se existir), aceitando NOME ou caminho relativo legado.
-     *
-     * @param  string|null $filename Nome simples (ex.: foo.png) OU caminho relativo legado (ex.: premios/banners/foo.png)
-     * @param  string      $dir      Diretório padrão quando $filename for apenas nome
-     * @return void
-     */
-    private function deleteIfExists(?string $filename, string $dir): void
-    {
-        if (!$filename) return;
-
-        // Se já vier com '/', tratamos como caminho relativo completo.
-        $relativePath = Str::contains($filename, '/')
-            ? $filename
-            : (trim($dir, '/').'/'.$filename);
-
-        if (Storage::disk('public')->exists($relativePath)) {
-            Storage::disk('public')->delete($relativePath);
-        }
-    }
-
-    /**
-     * Sincroniza as faixas do prêmio (upsert + exclusão das removidas).
-     *
-     * @param  Premio $premio
-     * @param  array<int,array<string,mixed>> $faixas
-     * @return void
-     */
-    private function syncFaixas(Premio $premio, array $faixas): void
-    {
-        $idsMantidos = [];
-
-        foreach ($faixas as $fx) {
-            $payload = [
-                'pontos_min'  => (int) ($fx['pontos_min'] ?? 0),
-                'pontos_max'  => array_key_exists('pontos_max', $fx) ? ($fx['pontos_max'] !== null ? (int) $fx['pontos_max'] : null) : null,
-                'vl_viagem'   => (float) ($fx['vl_viagem'] ?? 0),
-                'acompanhante'=> (int) ($fx['acompanhante'] ?? 0),
-                'descricao'   => $fx['descricao'] ?? null,
-            ];
-
-            if (!empty($fx['id'])) {
-                /** @var PremioFaixa $row */
-                $row = PremioFaixa::query()
-                    ->where('id', (int) $fx['id'])
-                    ->where('id_premio', $premio->id)
-                    ->first();
-
-                if ($row) {
-                    $row->fill($payload)->save();
-                    $idsMantidos[] = $row->id;
-                    continue;
-                }
-            }
-
-            $novo = new PremioFaixa($payload);
-            $novo->id_premio = $premio->id;
-            $novo->save();
-            $idsMantidos[] = $novo->id;
-        }
-
-        // apaga faixas que não vieram mais
-        if (!empty($idsMantidos)) {
-            PremioFaixa::query()
-                ->where('id_premio', $premio->id)
-                ->whereNotIn('id', $idsMantidos)
-                ->delete();
-        } else {
-            // se veio vazio, remove todas
-            PremioFaixa::query()
-                ->where('id_premio', $premio->id)
-                ->delete();
-        }
+        return response()->json([
+            'sucesso'  => true,
+            'mensagem' => 'Prêmio atualizado com sucesso.',
+            'data'     => new PremioResource($premio),
+        ]);
     }
 
     /**
@@ -316,7 +153,6 @@ class PremioController extends Controller
         /** @var array{vl_viagem: float|null} $data */
         $data = $request->validated();
 
-        // Atualiza pontualmente
         $faixa->vl_viagem = array_key_exists('vl_viagem', $data) ? $data['vl_viagem'] : $faixa->vl_viagem;
         $faixa->save();
 
@@ -330,6 +166,22 @@ class PremioController extends Controller
                 'pontos_max' => $faixa->pontos_max,
                 'vl_viagem'  => $faixa->vl_viagem,
             ],
+        ]);
+    }
+
+    /** @phpstan-return JsonResponse */
+    public function alterarStatus(Request $request, Premio $premio): JsonResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'boolean'],
+        ]);
+
+        $premio = $this->service->alterarStatus($premio, (bool) $validated['status']);
+
+        return response()->json([
+            'sucesso'  => true,
+            'mensagem' => 'Status do prêmio atualizado.',
+            'data'     => new PremioResource($premio),
         ]);
     }
 }

@@ -3,11 +3,12 @@
 namespace App\Http\Resources;
 
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
  * @property string|null $titulo
- * @property string|null $descricao
  * @property string|null $regras
  * @property string|null $regulamento
  * @property string|null $site
@@ -25,11 +26,10 @@ class PremioResource extends JsonResource
         return [
             'id'                  => $this->id,
             'titulo'              => $this->titulo,
-            'descricao'           => $this->descricao,
             'regras'              => $this->regras,
-            'regulamento'         => $this->regulamento_url,
+            'regulamento'         => $this->regulamento,
             'site'                => $this->site,
-            'banner'              => $this->banner_url,
+            'banner'              => $this->forceScheme($this->banner_url),
             'pontos'              => $this->pontos,
             'dt_inicio'           => $this->dt_inicio ? $this->dt_inicio->format('Y-m-d') : null,
             'dt_fim'              => $this->dt_fim ? $this->dt_fim->format('Y-m-d') : null,
@@ -52,5 +52,17 @@ class PremioResource extends JsonResource
                 });
             }),
         ];
+    }
+
+    /**
+     * Força http em local e https em produção.
+     */
+    private function forceScheme(?string $url): ?string
+    {
+        if (!$url) return null;
+        if (app()->environment('local')) {
+            return preg_replace('#^https://#', 'http://', $url);
+        }
+        return preg_replace('#^http://#', 'https://', $url);
     }
 }

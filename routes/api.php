@@ -46,6 +46,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/premios', [PremioController::class, 'store']);
     Route::patch('/premios/faixas/{faixa}/valor-viagem', [PremioController::class, 'atualizarValorViagemFaixa']);
     Route::match(['put','patch'], '/premios/{premio}', [PremioController::class, 'update']);
+    Route::patch('/premios/{premio}/status', [PremioController::class, 'alterarStatus']);
 
     Route::get('/banners', [BannerController::class, 'index'])->name('banners.index');
     Route::get('/banners/ativos', [BannerController::class, 'ativos'])->name('banners.ativos');

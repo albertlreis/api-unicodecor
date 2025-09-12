@@ -16,9 +16,9 @@ use Illuminate\Support\Str;
  * @property string|null         $titulo
  * @property string|null         $descricao
  * @property string|null         $regras
- * @property string|null         $regulamento  Caminho relativo no disco 'public' (ex.: "premios/regulamentos/arquivo.pdf")
+ * @property string|null         $regulamento
  * @property string|null         $site
- * @property string|null         $banner       Caminho relativo no disco 'public' (ex.: "premios/banners/arquivo.jpg")
+ * @property string|null         $banner
  * @property float|null          $pontos
  * @property float|null          $valor_viagem
  * @property Carbon|string|null  $dt_inicio
@@ -39,8 +39,7 @@ class Premio extends Model
     public $timestamps = false;
 
     /** Diretórios padrão no disco 'public'. */
-    public const BANNER_DIR      = 'premios/banners';
-    public const REGULAMENTO_DIR = 'premios/regulamentos';
+    public const BANNER_DIR      = 'premios';
 
     /** @var array<int, string> */
     protected $fillable = [
@@ -172,50 +171,37 @@ class Premio extends Model
     }
 
     /**
-     * Mutator para o banner: salva **normalizado** (ex.: "premios/banners/arquivo.jpg") ou null.
+     * Mutator: persiste somente o basename (ex.: "abc123.jpg").
+     * Aceita URL completa, caminho ou basename.
      *
      * @param  string|null $value
      * @return void
      */
     public function setBannerAttribute(?string $value): void
     {
-        $this->attributes['banner'] = $this->normalizeFile($value, self::BANNER_DIR);
+        if ($value === null || trim($value) === '') {
+            $this->attributes['banner'] = null;
+            return;
+        }
+        $raw  = trim($value);
+        // Extrai apenas o arquivo se vier URL absoluta ou caminho
+        $file = basename(parse_url($raw, PHP_URL_PATH) ?: $raw);
+        // Recusa diretórios (sem extensão)
+        $ext  = pathinfo($file, PATHINFO_EXTENSION);
+        $this->attributes['banner'] = $ext ? $file : null;
     }
 
     /**
-     * Mutator para o regulamento: salva **normalizado** (ex.: "premios/regulamentos/arquivo.pdf") ou null.
-     *
-     * @param  string|null $value
-     * @return void
-     */
-    public function setRegulamentoAttribute(?string $value): void
-    {
-        $this->attributes['regulamento'] = $this->normalizeFile($value, self::REGULAMENTO_DIR);
-    }
-
-    // ------------------------------------------------------------------------------
-    // Accessors de URL pública (sempre via Storage)
-    // ------------------------------------------------------------------------------
-
-    /**
-     * URL pública do banner (sempre via Storage 'public').
+     * URL pública do banner (sempre via Storage 'public' e pasta "premios/").
      *
      * @return string|null
      */
     public function getBannerUrlAttribute(): ?string
     {
-        $path = $this->normalizeFile($this->banner, self::BANNER_DIR);
-        return $path ? Storage::disk('public')->url($path) : null;
-    }
-
-    /**
-     * URL pública do regulamento (sempre via Storage 'public').
-     *
-     * @return string|null
-     */
-    public function getRegulamentoUrlAttribute(): ?string
-    {
-        $path = $this->normalizeFile($this->regulamento, self::REGULAMENTO_DIR);
-        return $path ? Storage::disk('public')->url($path) : null;
+        if (!$this->banner) {
+            return null;
+        }
+        $path = rtrim(self::BANNER_DIR, '/').'/'.$this->banner; // "premios/hash.ext"
+        return Storage::disk('public')->url($path);
     }
 }

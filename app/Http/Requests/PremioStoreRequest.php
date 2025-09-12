@@ -5,53 +5,51 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Validação para criação de Prêmio.
- * Regras do projeto:
- * - Título e Período obrigatórios
- * - Banner e Regulamento SEMPRE anexados (sem URL)
- * - Faixas com valor por faixa
- * - Status no cadastro é sempre ativo (controlado no controller)
+ * @psalm-type FaixaPayload=array{
+ *   id?: int,
+ *   pontos_min: numeric,
+ *   pontos_max?: numeric|null,
+ *   vl_viagem: numeric,
+ *   acompanhante: 0|1,
+ *   descricao?: string|null
+ * }
  */
 class PremioStoreRequest extends FormRequest
 {
-    public function authorize(): bool
-    {
-        return $this->user() !== null;
-    }
+    public function authorize(): bool { return $this->user() !== null; }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** @return array<string, mixed> */
     public function rules(): array
     {
         return [
             'titulo'      => ['required', 'string', 'max:255'],
-            'descricao'   => ['nullable', 'string'],
             'regras'      => ['nullable', 'string'],
+            'regulamento' => ['nullable', 'string'],
             'dt_inicio'   => ['required', 'date_format:Y-m-d'],
             'dt_fim'      => ['required', 'date_format:Y-m-d', 'after_or_equal:dt_inicio'],
 
-            // Anexos obrigatórios
-            'banner_file'      => ['required', 'file', 'mimetypes:image/jpeg,image/png,image/webp', 'max:10240'], // 10MB
-            'regulamento_file' => ['required', 'file', 'mimetypes:application/pdf', 'max:20480'],               // 20MB
+            'faixas'                 => ['array'],
+            'faixas.*.id'            => ['sometimes', 'integer', 'min:1'],
+            'faixas.*.pontos_min'    => ['required', 'numeric', 'min:0'],
+            'faixas.*.pontos_max'    => ['nullable', 'numeric', 'min:0'],
+            'faixas.*.vl_viagem'     => ['required', 'numeric', 'min:0'],
+            'faixas.*.acompanhante'  => ['required', 'in:0,1'],
+            'faixas.*.descricao'     => ['nullable', 'string'],
 
-            // Faixas
-            'faixas'                      => ['array'],
-            'faixas.*.id'                 => ['sometimes', 'integer', 'min:1'],
-            'faixas.*.pontos_min'         => ['required', 'numeric', 'min:0'],
-            'faixas.*.pontos_max'         => ['nullable', 'numeric', 'min:0'],
-            'faixas.*.vl_viagem'          => ['required', 'numeric', 'min:0'],
-            'faixas.*.acompanhante'       => ['required', 'in:0,1'],
-            'faixas.*.descricao'          => ['nullable', 'string'],
+            'arquivo'   => [
+                'nullable', 'file', 'image', 'mimes:jpg,jpeg,png,webp',
+                'dimensions:width=1650,height=1080',
+                'max:5120'
+            ],
         ];
     }
 
+    /** @return array<string, string> */
     public function messages(): array
     {
         return [
             'dt_fim.after_or_equal' => 'A data de fim deve ser posterior ou igual à data de início.',
-            'banner_file.required'  => 'Envie o banner (imagem).',
-            'regulamento_file.required' => 'Anexe o regulamento (PDF).',
+            'arquivo.dimensions'    => 'O banner deve ter exatamente 1650x1080 pixels.',
         ];
     }
 }
