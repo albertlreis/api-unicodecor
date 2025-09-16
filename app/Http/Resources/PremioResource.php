@@ -110,7 +110,7 @@ class PremioResource extends JsonResource
 
         // Caminho público do disk "public" (normalmente vira "/storage/banners/{file}")
         // Ex.: php artisan storage:link
-        $relative = Storage::disk('public')->url('banners/' . $filename);
+        $relative = Storage::disk('public')->url('premios/' . $filename);
 
         // Base do app (APP_URL), sem barra final
         $base = rtrim((string) config('app.url'), '/');
