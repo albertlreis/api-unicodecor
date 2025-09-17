@@ -68,6 +68,15 @@ class BannerController extends Controller
     /** PUT/PATCH /banners/{banner} (sem trocar imagem) */
     public function update(BannerUpdateRequest $request, Banner $banner): JsonResponse
     {
+        $data = $request->validated();
+
+        if ($request->hasFile('arquivo')) {
+            $arquivo = $request->file('arquivo');
+            $banner = $this->service->atualizarComUpload($banner, $data, $arquivo);
+        } else {
+            $banner = $this->service->atualizar($banner, $data);
+        }
+
         $banner = $this->service->atualizar($banner, $request->validated());
         return (new BannerResource($banner))->response();
     }

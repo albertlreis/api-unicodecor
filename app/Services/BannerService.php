@@ -67,17 +67,12 @@ class BannerService
      */
     public function criarComUpload(array $data, UploadedFile $arquivo): Banner
     {
-        $contents = file_get_contents($arquivo->getRealPath());
-        $hash = sha1($contents ?: uniqid('banner_', true));
-
-        $nomeArquivo = "$hash.jpg";
-
-        Storage::disk('public')->put("banners/$nomeArquivo", (string) $contents);
+        $nomeArquivo = $this->storeUploadedImage($arquivo);
 
         /** @var Banner $banner */
         $banner = Banner::query()->create([
             'titulo'    => $data['titulo'],
-            'imagem'    => $nomeArquivo,          // salva somente o hash (#5)
+            'imagem'    => $nomeArquivo,
             'link'      => $data['link']      ?? null,
             'descricao' => $data['descricao'] ?? null,
             'status'    => (int) ($data['status'] ?? 1),
@@ -105,6 +100,33 @@ class BannerService
         return $banner->refresh();
     }
 
+    /**
+     * Atualiza dados e SUBSTITUI a imagem (se enviada).
+     * Remove arquivo antigo (se houver) e salva o novo.
+     *
+     * @param  array<string,mixed> $data
+     */
+    public function atualizarComUpload(Banner $banner, array $data, UploadedFile $arquivo): Banner
+    {
+        // salva nova imagem
+        $novoNome = $this->storeUploadedImage($arquivo);
+
+        // remove a antiga se existir
+        if (!empty($banner->imagem)) {
+            Storage::disk('public')->delete("banners/{$banner->imagem}");
+        }
+
+        $banner->fill([
+            'titulo'    => $data['titulo']    ?? $banner->titulo,
+            'link'      => $data['link']      ?? $banner->link,
+            'descricao' => $data['descricao'] ?? $banner->descricao,
+            'status'    => array_key_exists('status', $data) ? (int) $data['status'] : $banner->status,
+            'imagem'    => $novoNome,
+        ])->save();
+
+        return $banner->refresh();
+    }
+
     public function alterarStatus(Banner $banner, int|bool $status): Banner
     {
         $banner->status = (int)((bool)$status);
@@ -115,5 +137,26 @@ class BannerService
     public function remover(Banner $banner): void
     {
         $banner->delete();
+    }
+
+    /**
+     * Armazena a imagem no disco público e retorna o nome do arquivo.
+     * Mantém padrão "hash.ext" em /public/banners.
+     */
+    protected function storeUploadedImage(UploadedFile $arquivo): string
+    {
+        $contents = file_get_contents($arquivo->getRealPath());
+        $hash = sha1($contents ?: uniqid('banner_', true));
+
+        // tenta preservar a extensão válida
+        $ext = strtolower($arquivo->getClientOriginalExtension() ?: $arquivo->extension() ?: 'jpg');
+        if (!in_array($ext, ['jpg','jpeg','png','gif','webp'], true)) {
+            $ext = 'jpg';
+        }
+
+        $nomeArquivo = "$hash.$ext";
+        Storage::disk('public')->put("banners/{$nomeArquivo}", (string) $contents);
+
+        return $nomeArquivo;
     }
 }

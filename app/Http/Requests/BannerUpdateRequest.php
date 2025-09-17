@@ -28,6 +28,7 @@ class BannerUpdateRequest extends FormRequest
             'link'      => ['sometimes', 'nullable', 'string', 'max:1024'],
             'descricao' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'status'    => ['sometimes', 'boolean'],
+            'arquivo'   => ['sometimes', 'nullable', 'file', 'mimes:jpg,jpeg,png,gif,webp', 'max:5120'],
         ];
     }
 
@@ -38,5 +39,13 @@ class BannerUpdateRequest extends FormRequest
             $data['status'] = (int) ((bool) $data['status']);
         }
         return $data;
+    }
+
+    public function messages(): array
+    {
+        return [
+            'arquivo.mimes' => 'A imagem deve ser JPG, JPEG, PNG, GIF ou WEBP.',
+            'arquivo.max'   => 'A imagem deve ter no máximo 5MB.',
+        ];
     }
 }
