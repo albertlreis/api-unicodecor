@@ -63,7 +63,9 @@ class PremioService
      * Cria prêmio (status=1). Banner é opcional; quando presente salva "hash.ext".
      *
      * @param array<string, mixed> $data
-     * @param UploadedFile|null    $arquivo
+     * @param UploadedFile|null $arquivo
+     * @return \App\Models\Premio
+     * @throws \Throwable
      */
     public function criar(array $data, ?UploadedFile $arquivo): Premio
     {

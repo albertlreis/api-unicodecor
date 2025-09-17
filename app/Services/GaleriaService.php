@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\Galeria;
 use App\Models\GaleriaImagem;
+use Illuminate\Contracts\Filesystem\Factory as StorageFactory;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +22,11 @@ use function in_array;
  */
 class GaleriaService
 {
+    public function __construct(
+        private readonly DatabaseManager $db,
+        private readonly StorageFactory $storage,
+    ) {}
+
     /**
      * Lista galerias com filtros por status e quantidade mínima de imagens.
      *
@@ -140,6 +147,35 @@ class GaleriaService
         return $galeria;
     }
 
+    /** @return string sha1 do conteúdo */
+    private function sha1Of(UploadedFile $file): string
+    {
+        $ctx = hash_init('sha1');
+        $stream = fopen($file->getRealPath(), 'rb');
+        while (!feof($stream)) {
+            $buf = fread($stream, 1024 * 1024);
+            if ($buf !== false) {
+                hash_update($ctx, $buf);
+            }
+        }
+        fclose($stream);
+        return hash_final($ctx);
+    }
+
+    /** @return string extensão coerente (jpg/png/webp) */
+    private function resolveExtension(UploadedFile $file): string
+    {
+        $ext = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: '');
+        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            return $ext === 'jpeg' ? 'jpg' : $ext;
+        }
+        $mime = strtolower((string) $file->getMimeType());
+        if (str_contains($mime, 'jpeg')) return 'jpg';
+        if (str_contains($mime, 'png'))  return 'png';
+        if (str_contains($mime, 'webp')) return 'webp';
+        return 'jpg';
+    }
+
     /**
      * Envia/associa imagem (salva somente o nome do arquivo).
      *
@@ -149,14 +185,22 @@ class GaleriaService
      */
     public function adicionarImagem(Galeria $galeria, UploadedFile $arquivo): GaleriaImagem
     {
-        $path = $arquivo->store('galerias');
-        $filename = basename($path);
+        $hash = $this->sha1Of($arquivo);
+        $ext  = $this->resolveExtension($arquivo);
+        $filename = "$hash.$ext";
+        $this->storage->disk('public')->putFileAs('galerias', $arquivo, $filename);
 
         $img = new GaleriaImagem();
         $img->idGalerias = $galeria->idGalerias;
         $img->arquivo = $filename;
         $img->status = 1;
         $img->save();
+
+        $temCapa = !empty($galeria->idGaleriaImagens);
+        if (!$temCapa) {
+            $galeria->idGaleriaImagens = $img->idGaleriaImagens;
+            $galeria->save();
+        }
 
         return $img;
     }
@@ -176,8 +220,7 @@ class GaleriaService
                 $galeria->save();
             }
 
-            $img->status = 0;
-            $img->save();
+            $img->delete();
 
             if ($img->arquivo && Storage::exists("public/galerias/{$img->arquivo}")) {
                 Storage::delete("public/galerias/{$img->arquivo}");

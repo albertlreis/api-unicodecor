@@ -133,10 +133,6 @@ class GaleriaController extends Controller
 
         $galeria = Galeria::where('status', '!=', -1)->findOrFail($id);
 
-        $request->validate([
-            'arquivo' => ['required', 'file', 'mimes:jpg,jpeg,png,gif,webp', 'max:5120'],
-        ]);
-
         $file = $request->file('arquivo');
         if (!$file) {
             throw ValidationException::withMessages(['arquivo' => 'Arquivo inválido.']);

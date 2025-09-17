@@ -25,7 +25,7 @@ class EloquentPremioRepository implements PremioRepository
         $perPage = ($perPage >= 1 && $perPage <= 100) ? $perPage : 15;
 
         $page = (int)($filtros['page'] ?? 1);
-        $page = $page >= 1 ? $page : 1;
+        $page = max($page, 1);
 
         $includeFaixas = (bool)($filtros['include_faixas'] ?? false);
 
@@ -35,7 +35,6 @@ class EloquentPremioRepository implements PremioRepository
             'titulo'     => 'premios.titulo',
             'dt_inicio'  => 'premios.dt_inicio',
             'dt_fim'     => 'premios.dt_fim',
-            // especial: 'pontuacao' ordena por MAX(COALESCE(pf.pontos_max, pf.pontos_min))
             'pontuacao'  => null,
         ];
         $orderColumn = $orderMap[$ordenarPor] ?? 'premios.dt_inicio';
@@ -92,7 +91,6 @@ class EloquentPremioRepository implements PremioRepository
             $q->ativosNoDia($hoje);
         }
 
-// -------- ordenação ----------
         if ($ordenarPor === 'pontuacao') {
             // Calcula a maior pontuação de cada prêmio (pontos_max quando existe, senão pontos_min)
             $q->selectRaw(
