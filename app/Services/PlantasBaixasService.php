@@ -11,7 +11,11 @@ use Illuminate\Support\Facades\Storage;
  */
 class PlantasBaixasService
 {
-    public const STORAGE_DIR = 'uploads/plantas-baixas';
+    public const STORAGE_DIR = 'plantas'; // padroniza como em prêmios (sem "uploads/")
+
+    public function __construct(
+        private readonly HashedFileStorage $hashStorage
+    ) {}
 
     /** @return array<int, array<string,mixed>> */
     public function listarAgrupado(): array
@@ -27,7 +31,7 @@ class PlantasBaixasService
             $emp   = $planta->empreendimento;
 
             $idConst = $const->idConstrutoras;
-            $idEmp   = $emp->idEmpreendimentos;
+            $idEmp   = $emp->idEmpreendimentos ?? $emp->id;
 
             $agrupado[$idConst] ??= [
                 'id_construtora'  => $idConst,
@@ -44,53 +48,40 @@ class PlantasBaixasService
             ];
 
             $agrupado[$idConst]['empreendimentos'][$idEmp]['plantas'][] = [
-                'id'        => $planta->idPlantasBaixas,
+                'id'        => $planta->idPlantasBaixas ?? $planta->id,
                 'titulo'    => $planta->titulo,
                 'descricao' => $planta->descricao,
                 'nome'      => $planta->nome,
-                'arquivo'   => $planta->arquivo, // Resource aplicará URL pública
+                'arquivo'   => $planta->arquivo, // Resource aplica URL
             ];
         }
 
         return array_values($agrupado);
     }
 
-    /**
-     * Cria uma planta baixa com upload de PDF.
-     *
-     * @param array<string,mixed> $payload
-     * @param UploadedFile $arquivo
-     * @return PlantaBaixa
-     */
-    public function criar(array $payload, UploadedFile $arquivo): PlantaBaixa
+    /** Cria planta baixa com upload de DWG (hash.ext). */
+    public function criar(array $payload, UploadedFile $dwg): PlantaBaixa
     {
-        $caminho = $this->armazenarPdf($arquivo);
+        $nomeArmazenado = $this->armazenarDwgComHash($dwg);
 
         $planta = new PlantaBaixa();
         $planta->idEmpreendimentos = (int) $payload['idEmpreendimentos'];
         $planta->titulo            = $payload['titulo'];
         $planta->descricao         = $payload['descricao'] ?? null;
-        $planta->nome              = $payload['nome'] ?? pathinfo($arquivo->getClientOriginalName(), PATHINFO_FILENAME);
-        $planta->arquivo           = $caminho; // salvar caminho relativo no disco
+        $planta->nome              = $payload['nome'] ?? pathinfo($dwg->getClientOriginalName(), PATHINFO_FILENAME);
+        $planta->arquivo           = $nomeArmazenado; // salva só "hash.dwg"
         $planta->status            = 1;
         $planta->save();
 
         return $planta->fresh();
     }
 
-    /**
-     * Atualiza a planta e, se enviado, substitui o PDF (apagando o antigo).
-     *
-     * @param PlantaBaixa $planta
-     * @param array<string,mixed> $payload
-     * @param UploadedFile|null $arquivo
-     * @return PlantaBaixa
-     */
-    public function atualizar(PlantaBaixa $planta, array $payload, ?UploadedFile $arquivo = null): PlantaBaixa
+    /** Atualiza planta e substitui DWG, quando enviado. */
+    public function atualizar(PlantaBaixa $planta, array $payload, ?UploadedFile $dwg = null): PlantaBaixa
     {
-        if ($arquivo) {
+        if ($dwg) {
             $this->apagarArquivoSeExistir($planta->arquivo);
-            $planta->arquivo = $this->armazenarPdf($arquivo);
+            $planta->arquivo = $this->armazenarDwgComHash($dwg);
         }
 
         foreach (['idEmpreendimentos','titulo','descricao','nome','status'] as $campo) {
@@ -103,28 +94,23 @@ class PlantasBaixasService
         return $planta->fresh();
     }
 
-    /** Exclui a planta e remove o PDF do disco. */
     public function excluir(PlantaBaixa $planta): void
     {
         $this->apagarArquivoSeExistir($planta->arquivo);
         $planta->delete();
     }
 
-    /** @internal Armazena PDF no disco "public" */
-    private function armazenarPdf(UploadedFile $arquivo): string
+    /** Salva DWG como "hash.dwg" em disk public/plantas */
+    private function armazenarDwgComHash(UploadedFile $dwg): string
     {
-        $nomeUnico = uniqid().'_'.preg_replace('/\s+/', '_', $arquivo->getClientOriginalName());
-        $arquivo->storeAs(self::STORAGE_DIR, $nomeUnico, ['disk' => 'public']);
-
-        // salva somente o nome
-        return $nomeUnico;
+        // força extensão .dwg no nome final
+        return $this->hashStorage->putWithHash($dwg, 'public', self::STORAGE_DIR, 'dwg');
     }
 
-    /** @internal Apaga arquivo antigo, se existir */
     private function apagarArquivoSeExistir(?string $nomeArquivo): void
     {
         if ($nomeArquivo) {
-            $path = self::STORAGE_DIR.'/'.$nomeArquivo;
+            $path = self::STORAGE_DIR.'/'.ltrim($nomeArquivo, '/');
             if (Storage::disk('public')->exists($path)) {
                 Storage::disk('public')->delete($path);
             }

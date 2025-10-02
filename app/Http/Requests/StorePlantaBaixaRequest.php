@@ -27,7 +27,7 @@ class StorePlantaBaixaRequest extends FormRequest
             'titulo'            => ['required','string','max:190'],
             'descricao'         => ['nullable','string','max:2000'],
             'nome'              => ['nullable','string','max:190'],
-            'arquivo'           => ['required','file','mimes:pdf','max:20480'],
+            'arquivo'           => ['required','file','mimes:dwg','max:20480'],
         ];
     }
 }
