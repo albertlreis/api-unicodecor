@@ -2,6 +2,7 @@
 
 namespace App\Domain\Pontuacoes\Services;
 
+use App\Jobs\SendPontuacaoMail;
 use App\Mail\PontuacaoAlteradaMail;
 use App\Mail\PontuacaoExcluidaMail;
 use App\Models\HistoricoEdicaoPonto;
@@ -12,42 +13,41 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use InvalidArgumentException;
+use Throwable;
 
 class PontuacaoCommandService
 {
     /**
-     * Envia e-mail ao admin de forma resiliente, sem derrubar a requisição.
+     * Envia e-mail ao admin de forma resiliente, sem bloquear a resposta HTTP.
      *
      * @param  mixed  $mailable
      * @return void
      */
-    private function notifyAdminSafely($mailable): void
+    private function notifyAdminSafely(mixed $mailable): void
     {
         $to = (string) config('mail.admin_address', '');
         if ($to === '') {
-            // Sem destinatário configurado -> não tenta enviar
             Log::info('Pontuação: admin_address vazio, pulando envio de e-mail.');
             return;
         }
 
         try {
-            // Use queue() se sua fila NÃO for 'sync' em produção. Se for 'sync', tanto faz.
-            Mail::to($to)->queue($mailable);
-        } catch (\Throwable $e) {
-            Log::warning('Falha ao enviar e-mail para admin.', [
+            SendPontuacaoMail::dispatch($to, $mailable)->afterResponse();
+        } catch (Throwable $e) {
+            Log::warning('Falha ao agendar e-mail para admin.', [
                 'error' => $e->getMessage(),
                 'to'    => $to,
-                'mail'  => get_class($mailable),
+                'mail'  => is_object($mailable) ? get_class($mailable) : gettype($mailable),
             ]);
-            // Não relança: evitamos 500 na exclusão/edição
         }
     }
 
     /**
      * Cria/atualiza registro.
      *
-     * @param  array<string,mixed> $data
-     * @param  Usuario             $usuario
+     * @param array<string,mixed> $data
+     * @param Usuario $usuario
+     * @return \App\Models\Ponto
      */
     public function salvar(array $data, Usuario $usuario): Ponto
     {
