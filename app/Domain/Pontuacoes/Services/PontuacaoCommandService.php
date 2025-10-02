@@ -9,24 +9,45 @@ use App\Models\Ponto;
 use App\Models\Usuario;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use InvalidArgumentException;
 
-/**
- * Serviço de comandos de pontuação (criar, atualizar e excluir) com histórico e RBAC.
- */
 class PontuacaoCommandService
 {
     /**
-     * Cria/atualiza um registro de ponto com histórico.
+     * Envia e-mail ao admin de forma resiliente, sem derrubar a requisição.
      *
-     * Regras:
-     * - Admin (perfil=1): usa id_loja do payload (obrigatório).
-     * - Lojista (perfil=3): força id_loja do usuário autenticado; só pode alterar seus próprios lançamentos (id_lojista = user.id).
+     * @param  mixed  $mailable
+     * @return void
+     */
+    private function notifyAdminSafely($mailable): void
+    {
+        $to = (string) config('mail.admin_address', '');
+        if ($to === '') {
+            // Sem destinatário configurado -> não tenta enviar
+            Log::info('Pontuação: admin_address vazio, pulando envio de e-mail.');
+            return;
+        }
+
+        try {
+            // Use queue() se sua fila NÃO for 'sync' em produção. Se for 'sync', tanto faz.
+            Mail::to($to)->queue($mailable);
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao enviar e-mail para admin.', [
+                'error' => $e->getMessage(),
+                'to'    => $to,
+                'mail'  => get_class($mailable),
+            ]);
+            // Não relança: evitamos 500 na exclusão/edição
+        }
+    }
+
+    /**
+     * Cria/atualiza registro.
      *
      * @param  array<string,mixed> $data
      * @param  Usuario             $usuario
-     * @return Ponto
      */
     public function salvar(array $data, Usuario $usuario): Ponto
     {
@@ -37,16 +58,15 @@ class PontuacaoCommandService
                 throw new InvalidArgumentException('Perfil não autorizado para operação.');
             }
 
-            // Resolve id_loja conforme perfil
             if ($perfil === 1) {
                 if (empty($data['id_loja'])) {
                     throw new InvalidArgumentException('id_loja é obrigatório para administradores.');
                 }
-            } else { // perfil 3
+            } else {
                 if (!$usuario->id_loja) {
                     throw new InvalidArgumentException('Usuário lojista sem loja vinculada.');
                 }
-                $data['id_loja'] = $usuario->id_loja; // força loja do lojista
+                $data['id_loja'] = $usuario->id_loja;
             }
 
             $data['id_lojista'] = $usuario->id;
@@ -56,12 +76,11 @@ class PontuacaoCommandService
                 /** @var Ponto $ponto */
                 $ponto = Ponto::findOrFail((int) $data['id']);
 
-                // Lojista só pode alterar o que ele mesmo lançou
-                if ($perfil === 3 && (int)$ponto->id_lojista !== (int)$usuario->id) {
+                if ($perfil === 3 && (int) $ponto->id_lojista !== (int) $usuario->id) {
                     throw new InvalidArgumentException('Lojista não pode alterar pontuação de outro usuário.');
                 }
 
-                $antes = clone $ponto; // para o e-mail
+                $antes = clone $ponto;
 
                 HistoricoEdicaoPonto::create([
                     'id_pontos'              => $ponto->id,
@@ -75,9 +94,10 @@ class PontuacaoCommandService
 
                 $ponto->update($data);
 
-                // notifica admin
-                Mail::to(config('mail.admin_address'))
-                    ->queue(new PontuacaoAlteradaMail($antes, $ponto->fresh(['profissional','loja']), $usuario->nome));
+                // notifica admin (resiliente)
+                $this->notifyAdminSafely(
+                    new PontuacaoAlteradaMail($antes, $ponto->fresh(['profissional','loja']), $usuario->nome)
+                );
 
                 return $ponto;
             }
@@ -93,11 +113,7 @@ class PontuacaoCommandService
     }
 
     /**
-     * Exclui (soft delete) uma pontuação e notifica admin.
-     *
-     * @param  int     $idPonto
-     * @param  Usuario $usuario
-     * @return void
+     * Exclui (soft delete) e notifica admin.
      */
     public function excluir(int $idPonto, Usuario $usuario): void
     {
@@ -111,18 +127,19 @@ class PontuacaoCommandService
             /** @var Ponto $ponto */
             $ponto = Ponto::with(['profissional','loja'])->findOrFail($idPonto);
 
-            if ($perfil === 3 && $ponto->id_lojista !== (int)$usuario->id) {
+            if ($perfil === 3 && $ponto->id_lojista !== $usuario->id) {
                 throw new InvalidArgumentException('Lojista não pode excluir pontuação de outro usuário.');
             }
 
-            // soft delete via status (mantendo histórico)
             $ponto->update([
                 'status'     => 0,
                 'dt_edicao'  => now(),
             ]);
 
-            Mail::to(config('mail.admin_address'))
-                ->queue(new PontuacaoExcluidaMail($ponto, $usuario->nome));
+            // notifica admin (resiliente)
+            $this->notifyAdminSafely(
+                new PontuacaoExcluidaMail($ponto, $usuario->nome)
+            );
         });
     }
 }
